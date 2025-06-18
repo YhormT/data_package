@@ -89,8 +89,22 @@ const getUserBalanceSummary = async (req, res) => {
   }
 };
 
+// Get audit log (filtered transactions for admin audit)
+const getAuditLog = async (req, res) => {
+  try {
+    const { userId, start, end, type } = req.query;
+    // getAllTransactions should accept (start, end, type, userId)
+    const transactions = await getAllTransactions(start, end, type, userId);
+    res.status(200).json(transactions);
+  } catch (error) {
+    console.error("Error in getAuditLog:", error);
+    res.status(500).json({ message: error.message || "Failed to retrieve audit log" });
+  }
+};
+
 module.exports = {
   getUserTransactionHistory,
   getAllTransactionHistory,
-  getUserBalanceSummary
+  getUserBalanceSummary,
+  getAuditLog
 };

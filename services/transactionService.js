@@ -1,6 +1,3 @@
-// const { PrismaClient } = require("@prisma/client");
-// const prisma = new PrismaClient();
-
 const prisma = require("../config/db");
 
 /**
@@ -12,49 +9,6 @@ const prisma = require("../config/db");
  * @param {String} reference - Reference ID (optional)
  * @returns {Promise<Object>} Created transaction
  */
-
-// const createTransaction = async (userId, amount, type, description, reference = null) => {
-//   try {
-//     const user = await prisma.user.findUnique({
-//       where: { id: userId },
-//       select: { loanBalance: true }
-//     });
-
-//     if (!user) {
-//       throw new Error("User not found");
-//     }
-
-//     const currentBalance = user.loanBalance;
-//     // console.log(`Current Balance: ${currentBalance},`);
-
-//     const newBalance = currentBalance + amount;
-
-//     console.log(`Current Balance: ${currentBalance}, Amount: ${amount}, New Balance: ${newBalance}`);
-
-//     // Update user's balance
-//     await prisma.user.update({
-//       where: { id: userId },
-//       data: { loanBalance: newBalance }
-//     });
-
-//     // Create transaction record
-//     const transaction = await prisma.transaction.create({
-//       data: {
-//         userId,
-//         amount,
-//         balance: newBalance,
-//         type,
-//         description,
-//         reference
-//       }
-//     });
-
-//     return transaction;
-//   } catch (error) {
-//     console.error("Error creating transaction:", error);
-//     throw new Error(`Failed to record transaction: ${error.message}`);
-//   }
-// };
 
 const createTransaction = async (userId, amount, type, description, reference = null) => {
   try {
@@ -106,37 +60,6 @@ const createTransaction = async (userId, amount, type, description, reference = 
  * @param {String} type - Transaction type filter (optional)
  * @returns {Promise<Array>} Transaction history
  */
-// const getUserTransactions = async (userId, startDate = null, endDate = null, type = null) => {
-//   try {
-//     const whereClause = { userId };
-    
-//     // Add date filters if provided
-//     if (startDate && endDate) {
-//       whereClause.createdAt = {
-//         gte: new Date(startDate),
-//         lte: new Date(endDate)
-//       };
-//     }
-    
-//     // Add type filter if provided
-//     if (type) {
-//       whereClause.type = type;
-//     }
-    
-//     return await prisma.transaction.findMany({
-//       where: whereClause,
-//       orderBy: { createdAt: "desc" },
-//       include: {
-//         user: {
-//           select: { name: true }
-//         }
-//       }
-//     });
-//   } catch (error) {
-//     console.error("Error fetching user transactions:", error);
-//     throw new Error(`Failed to retrieve transaction history: ${error.message}`);
-//   }
-// };
 
 const getUserTransactions = async (userId, startDate = null, endDate = null, type = null) => {
   try {
@@ -186,37 +109,6 @@ const getUserTransactions = async (userId, startDate = null, endDate = null, typ
  * @param {String} type - Transaction type filter (optional)
  * @returns {Promise<Array>} All transactions
  */
-// const getAllTransactions = async (startDate = null, endDate = null, type = null) => {
-//   try {
-//     const whereClause = {};
-    
-//     // Add date filters if provided
-//     if (startDate && endDate) {
-//       whereClause.createdAt = {
-//         gte: new Date(startDate),
-//         lte: new Date(endDate)
-//       };
-//     }
-    
-//     // Add type filter if provided
-//     if (type) {
-//       whereClause.type = type;
-//     }
-    
-//     return await prisma.transaction.findMany({
-//       where: whereClause,
-//       include: {
-//         user: {
-//           select: { id: true, name: true, email: true }
-//         }
-//       },
-//       orderBy: { createdAt: "desc" }
-//     });
-//   } catch (error) {
-//     console.error("Error fetching all transactions:", error);
-//     throw new Error(`Failed to retrieve transactions: ${error.message}`);
-//   }
-// };
 
 const getAllTransactions = async (startDate = null, endDate = null, type = null) => {
   try {
@@ -259,7 +151,7 @@ const getAllTransactions = async (startDate = null, endDate = null, type = null)
 };
 
 module.exports = {
-  createTransaction,
   getUserTransactions,
+  getAllTransactions,
   getAllTransactions
 };

@@ -1,108 +1,7 @@
-// const { PrismaClient } = require("@prisma/client");
-// const prisma = new PrismaClient();
-
 const prisma = require("../config/db");
 
 const { createTransaction } = require("./transactionService");
-
-// const submitCart = async (userId, mobileNumber = null) => {
-//   const cart = await prisma.cart.findUnique({
-//     where: { userId },
-//     include: {
-//       items: { include: { product: true } },
-//     },
-//   });
-
-//   if (!cart || cart.items.length === 0) {
-//     throw new Error("Cart is empty");
-//   }
-
-//   if (mobileNumber && !cart.mobileNumber) {
-//     await prisma.cart.update({
-//       where: { id: cart.id },
-//       data: { mobileNumber },
-//     });
-//   }
-
-//   const order = await prisma.order.create({
-//     data: {
-//       userId,
-//       items: {
-//         create: cart.items.map((item) => ({
-//           productId: item.productId,
-//           quantity: item.quantity,
-//           mobileNumber: item.mobileNumber,
-//           status: "Pending",
-//         })),
-//       },
-//     },
-//     include: { items: { include: { product: true } } },
-//   });
-
-//   await prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
-
-//   return order;
-// };
-
-// const submitCart = async (userId, mobileNumber = null) => {
-//   const cart = await prisma.cart.findUnique({
-//     where: { userId },
-//     include: {
-//       items: { include: { product: true } },
-//     },
-//   });
-
-//   if (!cart || cart.items.length === 0) {
-//     throw new Error("Cart is empty");
-//   }
-
-  
-//   const totalPrice = cart.items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
-
-
-//   if (mobileNumber && !cart.mobileNumber) {
-//     await prisma.cart.update({
-//       where: { id: cart.id },
-//       data: { mobileNumber },
-//     });
-//   }
-
-//   // Create order
-//   const order = await prisma.order.create({
-//     data: {
-//       userId,
-//       mobileNumber: cart.mobileNumber || mobileNumber,
-//       items: {
-//         create: cart.items.map((item) => ({
-//           productId: item.productId,
-//           quantity: item.quantity,
-//           mobileNumber: item.mobileNumber,
-//           status: "Pending",
-//         })),
-//       },
-//     },
-//     include: { items: { include: { product: true } } },
-//   });
-
-//   // Deduct amount from user's loanBalance
-//   const user = await prisma.user.findUnique({ where: { id: userId } });
-
-//   if (!user) {
-//     throw new Error("User not found");
-//   }
-
-//   const updatedLoanBalance = user.loanBalance - totalPrice;
-
-//   await prisma.user.update({
-//     where: { id: userId },
-//     data: { loanBalance: updatedLoanBalance },
-//   });
-
-//   // Clear cart
-//   await prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
-
-//   return order;
-// };
+const userService = require("./userService");
 
 const submitCart = async (userId, mobileNumber = null) => {
   const cart = await prisma.cart.findUnique({
@@ -154,13 +53,7 @@ const submitCart = async (userId, mobileNumber = null) => {
     include: { items: { include: { product: true } } },
   });
 
-  // Deduct amount from user's loanBalance
-  // const updatedLoanBalance = user.loanBalance - totalPrice;
-  // await prisma.user.update({
-  //   where: { id: userId },
-  //   data: { loanBalance: updatedLoanBalance },
-  // });
-
+ 
   // Record transaction for the order
   await createTransaction(
     userId,
@@ -236,73 +129,63 @@ const processOrder = async (orderId, status) => {
   return order;
 };
 
-
-
 const processOrderItem = async (orderItemId, status) => {
-  const validStatuses = ["Pending", "Processing", "Completed", "Cancelled"];
-
+  const validStatuses = ["Pending", "Processing", "Completed", "Cancelled", "Canceled"];
   if (!validStatuses.includes(status)) {
     throw new Error("Invalid order status");
   }
-
-  if (!orderItemId) {
-    throw new Error("Order item ID is required");
-  }
-
   const orderItem = await prisma.orderItem.update({
     where: { id: orderItemId },
     data: { status },
-    include: {
-      order: true,
-      product: true
-    }
+    include: { order: true, product: true }
   });
 
-  // Record transaction for item status change
+  // Auto-refund logic for cancelled/canceled
+  if (["Cancelled", "Canceled"].includes(status)) {
+    const refundAmount = orderItem.product.price * orderItem.quantity;
+    const existingRefund = await prisma.transaction.findFirst({
+      where: {
+        userId: orderItem.order.userId,
+        type: "ORDER_ITEM_REFUND",
+        reference: `orderItem:${orderItemId}`
+      }
+    });
+    if (!existingRefund) {
+      // Refund user wallet and log transaction
+      await createTransaction(
+        orderItem.order.userId,
+        refundAmount,
+        "ORDER_ITEM_REFUND",
+        `Order item #${orderItemId} (${orderItem.product.name}) refunded`,
+        `orderItem:${orderItemId}`
+      );
+    }
+  }
+
   await createTransaction(
     orderItem.order.userId,
-    0, // Zero amount for status change
+    0,
     "ORDER_ITEM_STATUS",
     `Order item #${orderItemId} (${orderItem.product.name}) status changed to ${status}`,
     `orderItem:${orderItemId}`
   );
-
   return orderItem;
 };
 
-// User: Get all completed orders
-async function getUserCompletedOrders(userId) {
-  return await prisma.order.findMany({
-    where: { userId, status: "Completed" },
-    include: {
-      items: {
-        include: {
-          product: {
-            select: {
-              id: true,
-              name: true,
-              description: true,
-              price: true,
-            },
-          },
-        },
-      },
-    },
-  });
-}
+// ... (rest of the code remains the same)
 
 const getOrderStatus = async () => {
   return await prisma.order.findMany({
     include: {
       items: {
         include: {
-          product: true,
-        },
+          product: true
+        }
       },
       user: {
-        select: { id: true, name: true, email: true },
-      },
-    },
+        select: { id: true, name: true, email: true }
+      }
+    }
   });
 };
 
@@ -311,47 +194,123 @@ const getOrderHistory = async (userId) => {
     where: { userId },
     include: {
       items: {
-        include: { product: true },
-      },
+        include: { product: true }
+      }
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: { createdAt: "desc" }
   });
 };
 
+const getUserCompletedOrders = async (userId) => {
+  return await prisma.order.findMany({
+    where: { userId, status: "Completed" },
+    include: {
+      items: {
+        include: {
+          product: true
+        }
+      }
+    },
+    orderBy: { createdAt: "desc" }
+  });
+};
 
 const updateOrderItemsStatus = async (orderId, newStatus) => {
   try {
-    const order = await prisma.order.findUnique({
-      where: { id: parseInt(orderId) },
-      select: { userId: true }
+    const order = await prisma.order.findUnique({ 
+      where: { id: parseInt(orderId) }, 
+      select: { userId: true } 
     });
     
     if (!order) {
       throw new Error("Order not found");
     }
     
-    const updatedItems = await prisma.orderItem.updateMany({
+    // If status is cancelled/canceled, handle refund logic
+    if (["Cancelled", "Canceled"].includes(newStatus)) {
+      const refundReference = `order_items_refund:${orderId}`;
+      
+      const existingRefund = await prisma.transaction.findFirst({
+        where: {
+          userId: order.userId,
+          type: "ORDER_ITEMS_REFUND",
+          reference: refundReference
+        }
+      });
+      
+      if (!existingRefund) {
+        // Calculate total order amount
+        const items = await prisma.orderItem.findMany({
+          where: { orderId: parseInt(orderId) },
+          include: { product: true }
+        });
+        
+        let totalOrderAmount = 0;
+        for (const item of items) {
+          totalOrderAmount += item.product.price * item.quantity;
+        }
+        
+        // Find the original order transaction to get the amount that was deducted
+        const originalOrderTransaction = await prisma.transaction.findFirst({
+          where: {
+            userId: order.userId,
+            type: "ORDER",
+            reference: `order:${orderId}`,
+            amount: { lt: 0 } // Negative amount (deduction)
+          }
+        });
+        
+        let refundAmount = totalOrderAmount;
+        
+        if (originalOrderTransaction) {
+          refundAmount = Math.abs(originalOrderTransaction.amount);
+        }
+        
+        if (refundAmount > 0) {
+          // Process the refund
+          await createTransaction(
+            order.userId,
+            refundAmount,
+            "ORDER_ITEMS_REFUND",
+            `All items in order #${orderId} refunded (Amount: ${refundAmount})`,
+            refundReference
+          );
+        }
+      } else {
+        console.log(`Refund already processed for order ${orderId}. Skipping duplicate refund.`);
+      }
+    }
+    
+    // Update order items status
+    const updatedItems = await prisma.orderItem.updateMany({ 
+      where: { orderId: parseInt(orderId) }, 
+      data: { status: newStatus } 
+    });
+    
+    // Create status change transaction (only if not a duplicate)
+    const statusChangeReference = `order_status:${orderId}:${newStatus}`;
+    const existingStatusChange = await prisma.transaction.findFirst({
       where: {
-        orderId: parseInt(orderId)
-      },
-      data: {
-        status: newStatus
+        userId: order.userId,
+        type: "ORDER_ITEMS_STATUS",
+        reference: statusChangeReference
       }
     });
     
-    // Record transaction for bulk status change
-    await createTransaction(
-      order.userId,
-      0, // Zero amount for status change
-      "ORDER_ITEMS_STATUS",
-      `All items in order #${orderId} status changed to ${newStatus}`,
-      `order:${orderId}`
-    );
+    if (!existingStatusChange) {
+      await createTransaction(
+        order.userId, 
+        0, 
+        "ORDER_ITEMS_STATUS", 
+        `All items in order #${orderId} status changed to ${newStatus}`, 
+        statusChangeReference
+      );
+    }
     
-    return {
-      success: true,
-      updatedCount: updatedItems.count,
-      message: `Successfully updated ${updatedItems.count} order items to ${newStatus}`
+    return { 
+      success: true, 
+      updatedCount: updatedItems.count, 
+      message: `Successfully updated ${updatedItems.count} order items to ${newStatus}` 
     };
   } catch (error) {
     console.error("Error updating order items status:", error);
@@ -359,17 +318,10 @@ const updateOrderItemsStatus = async (orderId, newStatus) => {
   }
 };
 
-
-
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Exporting functions for use in controllers
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 const orderService = {
   async getOrdersPaginated({ page = 1, limit = 20, filters = {} }) {
     const { startDate, endDate, status, product, mobileNumber } = filters;

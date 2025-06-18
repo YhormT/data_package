@@ -296,44 +296,10 @@ const repayLoan = async (userId, amount) => {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+// Deprecated: Refund logic is now handled in orderService.js for atomicity and idempotency.
+// This function is kept for compatibility or future use, but does nothing.
 const refundUser = async (userId, amount) => {
-  try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { loanBalance: true },
-    });
-
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    // const newBalance = user.loanBalance + amount;
-    const newBalance = user.loanBalance;
-
-    console.log(`new Balance: ${newBalance}`);
-
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: {
-        loanBalance: newBalance,
-        refundedTotal: {
-          increment: amount, // 👈 Add this line to accumulate total refunds
-        },
-      },
-    });
-
-    await createTransaction(
-      userId,
-      amount,
-      "REFUND",
-      `Refund of GHS ${amount} issued.`,
-      `user:${userId}`
-    );
-
-    return updatedUser;
-  } catch (error) {
-    throw new Error("Failed to refund user: " + error.message);
-  }
+  return { userId, amount, message: 'Refund logic moved to orderService.js' };
 };
 
 
@@ -400,7 +366,7 @@ const deleteUser = async (id) => {
 
 
 
-const processExcelFile = async (filePath, filename, userId) => {
+const processExcelFile = async (filePath, filename, userId, network) => {
   try {
     const workbook = xlsx.readFile(filePath);
     const sheetName = workbook.SheetNames[0];
@@ -443,6 +409,7 @@ const processExcelFile = async (filePath, filename, userId) => {
       phone: row.phone,
       price: row.price,
       itemDescription: row.itemDescription,
+      network: network, // Save the selected network
       uploadedFileId: uploadedFile.id,
     }));
 

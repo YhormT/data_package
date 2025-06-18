@@ -32,4 +32,7 @@ router.get('/transactions',
   getAllTransactionHistory
 );
 
+// Audit Log for Admin Dashboard
+router.get('/admin-balance-sheet/audit-log', require('../controllers/transactionController').getAuditLog);
+
 module.exports = router;
