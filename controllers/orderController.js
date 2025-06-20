@@ -169,6 +169,130 @@ exports.getOrders = async (req, res) => {
   }
 },
 
+// Excel Upload Controller for Agent Orders
+exports.uploadExcelOrders = async (req, res) => {
+  console.log('--- [UPLOAD EXCEL ORDERS] Endpoint hit ---');
+  const prisma = require('../config/db');
+  const userService = require('../services/userService');
+  const productService = require('../services/productService');
+  const cartService = require('../services/cartService');
+  const xlsx = require('xlsx');
+  const fs = require('fs');
+
+  try {
+    const { agentId, network } = req.body;
+    if (!req.file) {
+      console.log('ERROR: No file uploaded.');
+      return res.status(400).json({ success: false, message: 'No file uploaded.' });
+    }
+    if (!agentId || !network) {
+      return res.status(400).json({ success: false, message: 'Missing agentId or network.' });
+    }
+
+    // Parse Excel file
+    const filePath = req.file.path;
+    let data = [];
+    try {
+      const workbook = xlsx.readFile(filePath);
+      const sheetName = workbook.SheetNames[0];
+      data = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
+      console.log('Excel parsed. Rows found:', data.length);
+      if (data.length > 0) {
+        console.log('First row sample:', data[0]);
+      }
+    } catch (parseErr) {
+      console.log('ERROR parsing Excel file:', parseErr);
+      return res.status(400).json({ success: false, message: 'Failed to parse Excel file.' });
+    }
+
+    let total = data.length;
+    let errorReport = [];
+    if (total === 0) {
+      console.log('WARNING: Excel file parsed but contains zero rows.');
+    }
+
+    // Fetch agent/user and role
+    const agent = await userService.getUserById(parseInt(agentId));
+    if (!agent) {
+      fs.unlinkSync(filePath);
+      return res.status(400).json({ success: false, message: 'Agent not found.' });
+    }
+    const userRole = agent.role;
+    const username = agent.name;
+
+    // Validate all rows before adding to cart
+    let productsToAdd = [];
+    let totalCost = 0;
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      const phoneNumber = row['phone'] ? String(row['phone']).trim() : '';
+      const item = row['item'] ? String(row['item']).trim() : '';
+      const bundleAmount = row['bundle amount'] ? String(row['bundle amount']).trim() : '';
+      const quantity = row['quantity'] ? parseInt(row['quantity']) : 1;
+      let rowErrors = [];
+      if (!phoneNumber) rowErrors.push('Missing phone');
+      if (!item) rowErrors.push('Missing item (e.g: MTN - SUPERAGENT)');
+      if (!bundleAmount) rowErrors.push('Missing bundle amount (e.g: 50GB)');
+      if (quantity < 1 || isNaN(quantity)) rowErrors.push('Invalid quantity');
+      // Lookup product by item and bundle amount
+      let product = await prisma.product.findFirst({
+        where: {
+          name: item,
+          description: bundleAmount
+        },
+      });
+      if (!product) {
+        rowErrors.push('Product not found for item: ' + item + ' and bundle amount: ' + bundleAmount);
+      }
+      // Get price for user role
+      let finalPrice = null;
+      if (product) {
+        finalPrice = productService.getPriceForUserRole(userRole, product);
+        if (finalPrice == null) {
+          rowErrors.push('Price could not be determined for user role and product.');
+        }
+      }
+      // Check stock
+      if (product && product.stock < quantity) {
+        rowErrors.push('Not enough stock for product: ' + item + ' (' + bundleAmount + ')');
+      }
+      // Accumulate total cost
+      if (finalPrice && rowErrors.length === 0) {
+        totalCost += finalPrice * quantity;
+        productsToAdd.push({ product, quantity, phoneNumber, price: finalPrice });
+      } else if (rowErrors.length > 0) {
+        errorReport.push({ row: i + 2, errors: rowErrors });
+      }
+    }
+
+    // Check wallet balance
+    if (productsToAdd.length > 0 && agent.walletBalance !== undefined) {
+      if (agent.walletBalance < totalCost) {
+        errorReport.push({ row: 'ALL', errors: ['Insufficient wallet balance for total order. Required: ' + totalCost + ', Available: ' + agent.walletBalance] });
+      }
+    }
+
+    // If any errors, do not add to cart
+    if (errorReport.length > 0) {
+      fs.unlinkSync(filePath);
+      return res.status(400).json({ success: false, errorReport });
+    }
+
+    // All validations passed, add to cart
+    let added = 0;
+    for (const item of productsToAdd) {
+      await cartService.addItemToCart(agent.id, item.product.id, item.quantity, item.phoneNumber);
+      added++;
+    }
+    fs.unlinkSync(filePath);
+    return res.json({ success: true, message: `${added} products added to cart.`, summary: { total, added } });
+  } catch (err) {
+    console.log('ERROR in uploadExcelOrders:', err);
+    if (req.file && req.file.path) try { fs.unlinkSync(req.file.path); } catch (e) {}
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 exports.getOrderStats = async (req, res) => {
   try {
     const stats = await orderService.getOrderStats();
@@ -191,80 +315,3 @@ exports.updateOrderStatus = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 }
-
-
-
-
-
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-// const orderService = require('../services/orderService');
-
-// const orderController = {
-//   // Get orders with filtering, pagination, and pre-processed data
-//   async getOrders(req, res) {
-//     try {
-//       const { 
-//         page, 
-//         limit,
-//         startDate,
-//         endDate,
-//         status,
-//         product,
-//         mobileNumber
-//       } = req.query;
-      
-//       const filters = {
-//         startDate,
-//         endDate,
-//         status,
-//         product,
-//         mobileNumber
-//       };
-      
-//       const result = await orderService.getOrdersPaginated({
-//         page,
-//         limit,
-//         filters
-//       });
-      
-//       res.json(result);
-//     } catch (error) {
-//       console.error("Error fetching orders:", error);
-//       res.status(500).json({ error: error.message });
-//     }
-//   },
-  
-//   // Get summary stats for dashboard
-//   async getOrderStats(req, res) {
-//     try {
-//       const stats = await orderService.getOrderStats();
-//       res.json(stats);
-//     } catch (error) {
-//       console.error("Error fetching order stats:", error);
-//       res.status(500).json({ error: error.message });
-//     }
-//   },
-  
-//   // Update order status
-//   async updateOrderStatus(req, res) {
-//     try {
-//       const { orderId } = req.params;
-//       const { status } = req.body;
-      
-//       const updatedOrder = await orderService.updateOrderStatus(orderId, status);
-//       res.json(updatedOrder);
-//     } catch (error) {
-//       console.error("Error updating order status:", error);
-//       res.status(500).json({ error: error.message });
-//     }
-//   }
-// };
-
-
-// module.exports = orderController;
