@@ -10,42 +10,66 @@ const prisma = require("../config/db");
  * @returns {Promise<Object>} Created transaction
  */
 
-const createTransaction = async (userId, amount, type, description, reference = null) => {
+const createTransaction = async (userId, amount, type, description, reference = null, prismaOverride = null) => {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { loanBalance: true }
-    });
+    const prismaTx = prismaOverride || prisma;
+    // If using a transaction, don't nest another $transaction
+    if (prismaOverride) {
+      // Atomically increment the balance and get the updated value
+      const updatedUser = await prismaTx.user.update({
+        where: { id: userId },
+        data: { loanBalance: { increment: amount } },
+        select: { loanBalance: true }
+      });
 
-    if (!user) {
-      throw new Error("User not found");
+      // Calculate previous balance by subtracting the amount from the new balance
+      const newBalance = updatedUser.loanBalance;
+      const previousBalance = newBalance - amount;
+
+      // Create transaction record with previousBalance
+      const transaction = await prismaTx.transaction.create({
+        data: {
+          userId,
+          amount,
+          balance: newBalance,
+          previousBalance,
+          type,
+          description,
+          reference
+        }
+      });
+
+      return transaction;
+    } else {
+      // Use a transaction for atomicity
+      return await prisma.$transaction(async (prismaTxInner) => {
+        // Atomically increment the balance and get the updated value
+        const updatedUser = await prismaTxInner.user.update({
+          where: { id: userId },
+          data: { loanBalance: { increment: amount } },
+          select: { loanBalance: true }
+        });
+
+        // Calculate previous balance by subtracting the amount from the new balance
+        const newBalance = updatedUser.loanBalance;
+        const previousBalance = newBalance - amount;
+
+        // Create transaction record with previousBalance
+        const transaction = await prismaTxInner.transaction.create({
+          data: {
+            userId,
+            amount,
+            balance: newBalance,
+            previousBalance,
+            type,
+            description,
+            reference
+          }
+        });
+
+        return transaction;
+      });
     }
-
-    const previousBalance = user.loanBalance; // 👈 STORE PREVIOUS BALANCE
-    const newBalance = previousBalance + amount;
-
-    console.log(`Previous Balance: ${previousBalance}, Amount: ${amount}, New Balance: ${newBalance}`);
-
-    // Update user's balance
-    await prisma.user.update({
-      where: { id: userId },
-      data: { loanBalance: newBalance }
-    });
-
-    // Create transaction record with previousBalance
-    const transaction = await prisma.transaction.create({
-      data: {
-        userId,
-        amount,
-        balance: newBalance,
-        previousBalance, // 👈 ADD THIS FIELD
-        type,
-        description,
-        reference
-      }
-    });
-
-    return transaction;
   } catch (error) {
     console.error("Error creating transaction:", error);
     throw new Error(`Failed to record transaction: ${error.message}`);
@@ -151,7 +175,7 @@ const getAllTransactions = async (startDate = null, endDate = null, type = null)
 };
 
 module.exports = {
+  createTransaction,
   getUserTransactions,
-  getAllTransactions,
   getAllTransactions
 };

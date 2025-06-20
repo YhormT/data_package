@@ -105,84 +105,58 @@ const updateLoanStatus = async (userId, hasLoan) => {
 
 const updateUserLoanStatus = async (userId, hasLoan, deductionAmount) => {
   console.log("Updating user loan status:", { userId, hasLoan, deductionAmount });
-  
   try {
     if (!userId || isNaN(userId)) {
       throw new Error("Invalid userId provided");
     }
-    
-    // Convert userId to integer
     const userIdInt = parseInt(userId, 10);
-    
-    // Fetch the user's current loan balance
-    // Removed adminLoanBalance since it doesn't exist in your schema
+    // Fetch the user's current loan balance and adminLoanBalance
     const user = await prisma.user.findUnique({
       where: { id: userIdInt },
-      select: { 
+      select: {
         loanBalance: true,
-        adminLoanBalance: true 
-        // Remove adminLoanBalance if it doesn't exist in your schema
-        // adminLoanBalance: true,
+        adminLoanBalance: true
       },
     });
-    
     if (!user) {
       throw new Error("User not found");
     }
-    
-    // console.log("Current loanBalance:", user.loanBalance);
-    let updatedAdminLoanBalance = user.loanBalance ?? 0;
-
+    let updatedLoanBalance = user.loanBalance ?? 0;
+    let updatedAdminLoanBalance = user.adminLoanBalance ?? 0;
+    // If granting loan, set both balances to the current loanBalance or 0
+    // If removing loan, set both balances to 0
     if (hasLoan) {
-      // Copy loanBalance to adminLoanBalance
-      updatedAdminLoanBalance = user.loanBalance ?? 0;
-      console.log("New adminLoanBalance after copying loanBalance:", updatedAdminLoanBalance);
+      updatedAdminLoanBalance = updatedLoanBalance;
+    } else {
+      updatedAdminLoanBalance = 0;
+      updatedLoanBalance = 0;
     }
-    
     // Use transaction to ensure atomicity
     return await prisma.$transaction(async (tx) => {
-      // First update the user record
       const updatedUser = await tx.user.update({
         where: { id: userIdInt },
         data: {
           hasLoan,
-          adminLoanBalance: hasLoan ? updatedAdminLoanBalance : null,
-          // If adminLoanBalance doesn't exist in your schema, remove this line
-          // adminLoanBalance: hasLoan ? user.loanBalance : null, // Reset if no loan
+          loanBalance: updatedLoanBalance,
+          adminLoanBalance: updatedAdminLoanBalance,
         },
       });
-      
       // Then create the transaction record
-      if (hasLoan) {
-        // Record the loan status change transaction
-        await tx.transaction.create({
-          data: {
-            userId: userIdInt,
-            amount: 0, // Zero amount for status change
-            balance: user.loanBalance || 0, // Use current balance
-            type: "LOAN_STATUS",
-            description: `Loan status changed to active with balance ${user.loanBalance || 0}`,
-            reference: `user:${userIdInt}`
-          }
-        });
-      } else {
-        // Record loan status removal
-        await tx.transaction.create({
-          data: {
-            userId: userIdInt,
-            amount: 0, // Zero amount for status change
-            balance: user.loanBalance || 0, // Use current balance
-            type: "LOAN_STATUS",
-            description: `Loan status changed to inactive`,
-            reference: `user:${userIdInt}`
-          }
-        });
-      }
-      
+      await tx.transaction.create({
+        data: {
+          userId: userIdInt,
+          amount: 0,
+          balance: updatedLoanBalance,
+          type: "LOAN_STATUS",
+          description: hasLoan
+            ? `Loan status changed to active with balance ${updatedLoanBalance}`
+            : `Loan status changed to inactive and balances reset to 0`,
+          reference: `user:${userIdInt}`
+        }
+      });
       console.log("Database update result:", updatedUser);
       return updatedUser;
     });
-    
   } catch (error) {
     console.error("Error updating loan status:", error.message);
     throw new Error(`Failed to update loan status: ${error.message}`);
@@ -191,37 +165,26 @@ const updateUserLoanStatus = async (userId, hasLoan, deductionAmount) => {
 
 const updateAdminLoanBalance = async (userId, deductionAmount) => {
   console.log("Updating adminLoanBalance:", { userId, deductionAmount });
-
   try {
     if (!userId || isNaN(userId)) {
       throw new Error("Invalid userId provided");
     }
-
     // Fetch the current balance
     const user = await prisma.user.findUnique({
       where: { id: parseInt(userId, 10) },
       select: { adminLoanBalance: true },
     });
-
     if (!user) {
       throw new Error("User not found");
     }
-
-    console.log("Current adminLoanBalance:", user.adminLoanBalance);
-
-    // Ensure there is a valid balance before making deductions
     let updatedAdminLoanBalance = user.adminLoanBalance ?? 0;
-
     // Deduct the provided amount
     updatedAdminLoanBalance -= deductionAmount;
-
     // Ensure the balance does not go below zero
     if (updatedAdminLoanBalance < 0) {
       throw new Error("Insufficient balance for this deduction.");
     }
-
     console.log("New adminLoanBalance after deduction:", updatedAdminLoanBalance);
-    
     // Record the loan deduction transaction
     await createTransaction(
       parseInt(userId, 10),
@@ -230,15 +193,13 @@ const updateAdminLoanBalance = async (userId, deductionAmount) => {
       `Loan deduction of ${deductionAmount} from admin loan balance`,
       `user:${userId}`
     );
-
-    // Update only the adminLoanBalance column
+    // Update only the adminLoanBalance column, never set to null
     const updatedUser = await prisma.user.update({
       where: { id: parseInt(userId, 10) },
       data: {
         adminLoanBalance: updatedAdminLoanBalance,
       },
     });
-
     console.log("Database update result:", updatedUser);
     return updatedUser;
   } catch (error) {

@@ -4,69 +4,73 @@ const { createTransaction } = require("./transactionService");
 const userService = require("./userService");
 
 const submitCart = async (userId, mobileNumber = null) => {
-  const cart = await prisma.cart.findUnique({
-    where: { userId },
-    include: {
-      items: { include: { product: true } },
-    },
-  });
-
-  if (!cart || cart.items.length === 0) {
-    throw new Error("Cart is empty");
-  }
-
-  // Calculate total order price
-  const totalPrice = cart.items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
-
-  // Get user current balance
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) {
-    throw new Error("User not found");
-  }
-
-  if (user.loanBalance < totalPrice) {
-    throw new Error("Insufficient balance to place order");
-  }
-
-  // Set mobile number if provided
-  if (mobileNumber && !cart.mobileNumber) {
-    await prisma.cart.update({
-      where: { id: cart.id },
-      data: { mobileNumber },
-    });
-  }
-
-  // Create order
-  const order = await prisma.order.create({
-    data: {
-      userId,
-      mobileNumber: cart.mobileNumber || mobileNumber,
-      items: {
-        create: cart.items.map((item) => ({
-          productId: item.productId,
-          quantity: item.quantity,
-          mobileNumber: item.mobileNumber,
-          status: "Pending",
-        })),
+  // Use a transaction to ensure atomicity
+  return await prisma.$transaction(async (tx) => {
+    const cart = await tx.cart.findUnique({
+      where: { userId },
+      include: {
+        items: { include: { product: true } },
       },
-    },
-    include: { items: { include: { product: true } } },
+    });
+
+    if (!cart || cart.items.length === 0) {
+      throw new Error("Cart is empty");
+    }
+
+    // Calculate total order price
+    const totalPrice = cart.items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+
+    // Get user current balance
+    const user = await tx.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    if (user.loanBalance < totalPrice) {
+      throw new Error("Insufficient balance to place order");
+    }
+
+    // Set mobile number if provided
+    if (mobileNumber && !cart.mobileNumber) {
+      await tx.cart.update({
+        where: { id: cart.id },
+        data: { mobileNumber },
+      });
+    }
+
+    // Create order
+    const order = await tx.order.create({
+      data: {
+        userId,
+        mobileNumber: cart.mobileNumber || mobileNumber,
+        items: {
+          create: cart.items.map((item) => ({
+            productId: item.productId,
+            quantity: item.quantity,
+            mobileNumber: item.mobileNumber,
+            status: "Pending",
+          })),
+        },
+      },
+      include: { items: { include: { product: true } } },
+    });
+
+    // Record transaction for the order
+    // createTransaction must use the transaction-bound prisma
+    await createTransaction(
+      userId,
+      -totalPrice, // Negative amount for deduction
+      "ORDER",
+      `Order #${order.id} placed with ${order.items.length} items`,
+      `order:${order.id}`,
+      tx // pass the transaction-bound prisma
+    );
+
+    // Clear cart (we already have the items in the order)
+    await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
+
+    return order;
   });
-
- 
-  // Record transaction for the order
-  await createTransaction(
-    userId,
-    -totalPrice, // Negative amount for deduction
-    "ORDER",
-    `Order #${order.id} placed with ${order.items.length} items`,
-    `order:${order.id}`
-  );
-
-  // Clear cart (we already have the items in the order)
-  await prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
-
-  return order;
 };
 
 async function getAllOrders() {
