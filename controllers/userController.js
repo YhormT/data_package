@@ -64,12 +64,23 @@ const updateUser = async (req, res) => {
 const addLoan = async (req, res) => {
   const { userId, amount, hasLoan } = req.body; // Accept hasLoan manually
   try {
-    const user = await userService.addLoanToUser(userId, amount, hasLoan);
+    const user = await userService.addLoanToUser(userId, Number(amount), hasLoan);
     res.json({ message: "Loan added successfully", user });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
+// Dedicated refund endpoint for wallet refunds
+const refundUser = async (req, res) => {
+  const { userId, amount, refundReference } = req.body;
+  try {
+    const user = await userService.refundUser(userId, Number(amount), refundReference);
+    res.json({ message: "Refund added successfully", user });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 // const addLoan = async (req, res) => {
 //   const { userId, amount } = req.body;
 //   try {
@@ -126,6 +137,7 @@ const repayLoan = async (req, res) => {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 
+/*
 const refundUser = async (req, res) => {
   const { userId, amount } = req.body;
 
@@ -144,6 +156,7 @@ const refundUser = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+*/
 
 
 // 🔍 Get Loan Balance -- Godfrey
@@ -397,6 +410,7 @@ const updateAdminLoanBalanceController = async (req, res) => {
 
 
 module.exports = {
+  refundUser,
   getAllUsers,
   createUser,
   selectPackage,

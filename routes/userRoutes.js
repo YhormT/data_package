@@ -34,6 +34,7 @@ router.put("/:id", updateUser);
 router.delete("/:id", deleteUser);
 
 router.post("/loan/add", addLoan);
+router.post("/refund", refundUser);
 
 // router.post("/loan/repay", repayLoan);
 router.post("/loan/repay", refundUser);

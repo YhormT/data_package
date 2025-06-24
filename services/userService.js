@@ -65,7 +65,7 @@ const addLoanToUser = async (userId, amount) => {
     // Update user's loan balance
     const user = await prisma.user.update({
       where: { id: userId },
-      data: { loanBalance: amount },
+      data: { loanBalance: { increment: amount } },
     });
     
     // Record the transaction
@@ -80,6 +80,24 @@ const addLoanToUser = async (userId, amount) => {
     return user;
   } catch (error) {
     throw new Error("Failed to add loan: " + error.message);
+  }
+};
+
+const refundUser = async (userId, amount, refundReference) => {
+  try {
+    // Only update balance via createTransaction (atomic and logs the transaction)
+    await createTransaction(
+      userId,
+      amount, // Positive amount for refund
+      "REFUND",
+      `Refund amount ${amount} added to user balance`,
+      refundReference
+    );
+    // Fetch and return the updated user
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    return user;
+  } catch (error) {
+    throw new Error("Failed to refund: " + error.message);
   }
 };
 
@@ -129,7 +147,7 @@ const updateUserLoanStatus = async (userId, hasLoan, deductionAmount) => {
       updatedAdminLoanBalance = updatedLoanBalance;
     } else {
       updatedAdminLoanBalance = 0;
-      updatedLoanBalance = 0;
+      // Do NOT set updatedLoanBalance to 0; leave it unchanged
     }
     // Use transaction to ensure atomicity
     return await prisma.$transaction(async (tx) => {
@@ -193,11 +211,12 @@ const updateAdminLoanBalance = async (userId, deductionAmount) => {
       `Loan deduction of ${deductionAmount} from admin loan balance`,
       `user:${userId}`
     );
-    // Update only the adminLoanBalance column, never set to null
+    // Update adminLoanBalance and set hasLoan true if loan > 0
     const updatedUser = await prisma.user.update({
       where: { id: parseInt(userId, 10) },
       data: {
         adminLoanBalance: updatedAdminLoanBalance,
+        hasLoan: updatedAdminLoanBalance > 0, // Automatically set hasLoan true if balance > 0
       },
     });
     console.log("Database update result:", updatedUser);
@@ -259,11 +278,11 @@ const repayLoan = async (userId, amount) => {
 
 // Deprecated: Refund logic is now handled in orderService.js for atomicity and idempotency.
 // This function is kept for compatibility or future use, but does nothing.
-const refundUser = async (userId, amount) => {
+/*
+const refundUser = async (userId, amount, refundReference) => {
   return { userId, amount, message: 'Refund logic moved to orderService.js' };
 };
-
-
+*/
 
 const getUserLoanBalance = async (userId) => {
   try {
@@ -465,6 +484,7 @@ const updatePassword = async (userId, newPassword) => {
 
 
 module.exports = {
+
   getAllUsers,
   getUserByEmail,
   createUser,
