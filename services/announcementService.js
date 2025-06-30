@@ -41,18 +41,25 @@ class AnnouncementService {
   // Create new announcement
   async createAnnouncement(data) {
     try {
-      const { title, message, isActive = true, priority = 1, createdBy } = data;
-      
+      const { title, message, priority = 1, createdBy } = data;
+
+      // Deactivate all previous announcements
+      await prisma.announcement.updateMany({
+        where: { isActive: true },
+        data: { isActive: false }
+      });
+
+      // Create the new announcement as active
       const announcement = await prisma.announcement.create({
         data: {
           title,
           message,
-          isActive,
+          isActive: true, // Always set new as active
           priority,
           createdBy
         }
       });
-      
+
       return announcement;
     } catch (error) {
       throw new Error(`Failed to create announcement: ${error.message}`);
@@ -63,6 +70,7 @@ class AnnouncementService {
   async updateAnnouncement(id, data) {
     try {
       const { title, message, isActive, priority } = data;
+
       
       const announcement = await prisma.announcement.update({
         where: { id },

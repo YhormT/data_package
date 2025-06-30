@@ -12,6 +12,7 @@ const uploadRoutes = require('./routes/uploadRoutes');
 const transactionRoutes = require('./routes/transactionRoutes');
 const salesRoutes = require('./routes/salesRoutes');
 const smsRoutes = require('./routes/smsRoutes');
+const announcementRoutes = require('./routes/announcementRoutes');
 
 // const topUpRoutes = require('./routes/topupRoutes'); // 👈 Adjust path if needed
    // 👈 Your existing user routes
@@ -34,6 +35,7 @@ app.use('/api', transactionRoutes);
 
 app.use('/api/sales', salesRoutes);
 app.use('/api/sms', smsRoutes);
+app.use('/api/announcement', announcementRoutes);
 
 
 const PORT = process.env.PORT || 5000;
