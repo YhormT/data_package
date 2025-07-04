@@ -24,27 +24,6 @@ const createUser = async (data) => {
   return await prisma.user.create({ data });
 };
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////// I might use this code later //////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//  const createUser = async (data) => {
-//     // Hash the password before saving
-//     const hashedPassword = await bcrypt.hash(data.password, 10);
-//     return await prisma.user.create({
-//       data: {
-//         ...data,
-//         password: hashedPassword, // Store hashed password
-//       },
-//     });
-//   };
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////// I might use this code later //////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 const getUserById = async (id) => {
   return await prisma.user.findUnique({
     where: { id },
@@ -141,13 +120,15 @@ const updateUserLoanStatus = async (userId, hasLoan, deductionAmount) => {
     }
     let updatedLoanBalance = user.loanBalance ?? 0;
     let updatedAdminLoanBalance = user.adminLoanBalance ?? 0;
-    // If granting loan, set both balances to the current loanBalance or 0
-    // If removing loan, set both balances to 0
+
     if (hasLoan) {
       updatedAdminLoanBalance = updatedLoanBalance;
     } else {
+      if (updatedLoanBalance > 0) {
+        throw new Error("User still has an outstanding loan and cannot be deactivated manually until loan is fully repaid.");
+      }
+      updatedLoanBalance = 0;
       updatedAdminLoanBalance = 0;
-      // Do NOT set updatedLoanBalance to 0; leave it unchanged
     }
     // Use transaction to ensure atomicity
     return await prisma.$transaction(async (tx) => {
@@ -227,62 +208,112 @@ const updateAdminLoanBalance = async (userId, deductionAmount) => {
   }
 };
 
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////Not using repayLoan////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////////
+const assignLoan = async (userId, amount) => {
+  try {
+    // Convert amount to number
+    const loanAmount = Number(amount);
+    
+    // Update loan status and balance in a transaction
+    const user = await prisma.$transaction(async (tx) => {
+      // First get current balances
+      const currentUser = await tx.user.findUnique({
+        where: { id: userId },
+        select: { loanBalance: true, adminLoanBalance: true }
+      });
+      
+      // Save previous balances
+      const prevLoanBalance = currentUser.loanBalance ?? 0;
+      const prevAdminLoanBalance = currentUser.adminLoanBalance ?? 0;
+      // Calculate new balances by adding loan amount
+      const newLoanBalance = prevLoanBalance + loanAmount;
+      const newAdminLoanBalance = prevAdminLoanBalance + loanAmount;
+      
+      // Update user record with both balances
+      const updatedUser = await tx.user.update({
+        where: { id: userId },
+        data: {
+          hasLoan: true,
+          loanBalance: newLoanBalance,
+          adminLoanBalance: newAdminLoanBalance
+        }
+      });
+      
+      // Create loan assignment transaction with correct prev/new balances
+      await tx.transaction.create({
+        data: {
+          userId,
+          amount: loanAmount,
+          balance: newLoanBalance,
+          previousBalance: prevLoanBalance,
+          type: "LOAN_ASSIGNMENT",
+          description: `Loan amount ${loanAmount} assigned to user. prev balance: ${prevLoanBalance}, new balance: ${newLoanBalance}`,
+          reference: `user:${userId}`
+        }
+      });
+      
+      return updatedUser;
+    });
+    
+    return user;
+  } catch (error) {
+    throw new Error("Failed to assign loan: " + error.message);
+  }
+};
 
 const repayLoan = async (userId, amount) => {
   try {
+    // Fetch both loan balances
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { loanBalance: true }
+      select: { loanBalance: true, adminLoanBalance: true }
     });
     
     if (!user) {
       throw new Error("User not found");
     }
     
-    // Calculate new balance after repayment
-    const newBalance = user.loanBalance + amount;
-    const finalBalance = newBalance >= 0 ? 0 : newBalance;
-    const hasLoanAfterRepayment = finalBalance < 0;
+    // Save previous balances
+    const prevLoanBalance = user.loanBalance;
+    const prevAdminLoanBalance = user.adminLoanBalance;
     
-    // Update user's loan balance
+    // Calculate new balances after repayment
+    const absAmount = Math.abs(amount);
+    const newLoanBalance = prevLoanBalance - absAmount;
+    const newAdminLoanBalance = prevAdminLoanBalance - absAmount;
+    const finalLoanBalance = Math.max(newLoanBalance, 0);
+    const finalAdminLoanBalance = Math.max(newAdminLoanBalance, 0);
+    // If loan fully repaid, set hasLoan to false (0)
+    const hasLoanAfterRepayment = finalLoanBalance > 0 ? true : false;
+    
+    // Update both loan balances and hasLoan
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: {
-        loanBalance: finalBalance,
-        hasLoan: hasLoanAfterRepayment,
+        loanBalance: finalLoanBalance,
+        adminLoanBalance: finalAdminLoanBalance,
+        hasLoan: hasLoanAfterRepayment, // Must be boolean for Prisma/DB
       },
     });
+    console.log('DEBUG: Updated user after repayment:', updatedUser);
     
-    // Record the loan repayment transaction
-    await createTransaction(
-      userId,
-      amount, // Positive amount for repayment (adding to balance)
-      "REFUND",
-      `Refund amount of ${amount}, new balance: ${finalBalance}`,
-      `user:${userId}`
-    );
+    // Record the loan repayment transaction with correct prev/new balances
+    await prisma.transaction.create({
+      data: {
+        userId,
+        amount: -absAmount,
+        balance: finalLoanBalance,
+        previousBalance: prevLoanBalance,
+        type: "LOAN_REPAYMENT",
+        description: `Loan repayment amount of ${absAmount}, prev balance: ${prevLoanBalance}, new balance: ${finalLoanBalance}`,
+        reference: `user:${userId}`
+      }
+    });
 
     return updatedUser;
   } catch (error) {
     throw new Error("Failed to repay loan: " + error.message);
   }
 };
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-// Deprecated: Refund logic is now handled in orderService.js for atomicity and idempotency.
-// This function is kept for compatibility or future use, but does nothing.
-/*
-const refundUser = async (userId, amount, refundReference) => {
-  return { userId, amount, message: 'Refund logic moved to orderService.js' };
-};
-*/
 
 const getUserLoanBalance = async (userId) => {
   try {
@@ -484,7 +515,6 @@ const updatePassword = async (userId, newPassword) => {
 
 
 module.exports = {
-
   getAllUsers,
   getUserByEmail,
   createUser,
@@ -492,18 +522,16 @@ module.exports = {
   updateUser,
   deleteUser,
   addLoanToUser,
-  repayLoan,
-  getUserLoanBalance,
-  processExcelFile,
-  generateExcelFile,
-  getLatestFileData,
-
-  getFilePathById,
-  updatePassword,
+  refundUser,
   updateLoanStatus,
-  updateUserLoanStatus,
-
   updateAdminLoanBalance,
-
-  refundUser
+  repayLoan,
+  assignLoan,
+  getUserLoanBalance,
+  generateExcelFile,
+  updatePassword,
+  processExcelFile,
+  getLatestFileData,
+  getFilePathById,
+  updateUserLoanStatus
 };

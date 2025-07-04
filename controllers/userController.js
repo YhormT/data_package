@@ -1,4 +1,5 @@
 const userService = require("../services/userService");
+const { createTransaction } = require("../services/transactionService");
 const path = require("path");
 const fs = require("fs");
 const prisma = require("../config/db");
@@ -61,11 +62,19 @@ const updateUser = async (req, res) => {
 
 
 // Admin adds loan to user  -- Godfrey
-const addLoan = async (req, res) => {
-  const { userId, amount, hasLoan } = req.body; // Accept hasLoan manually
+const assignLoan = async (req, res) => {
+  const { userId, amount } = req.body;
   try {
-    const user = await userService.addLoanToUser(userId, Number(amount), hasLoan);
-    res.json({ message: "Loan added successfully", user });
+    // Convert amount to number
+    const loanAmount = Number(amount);
+    
+    // Use the dedicated loan assignment service
+    const user = await userService.assignLoan(userId, loanAmount);
+    
+    res.json({ 
+      message: "Loan assigned successfully",
+      user 
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -80,26 +89,6 @@ const refundUser = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-
-// const addLoan = async (req, res) => {
-//   const { userId, amount } = req.body;
-//   try {
-//       const user = await userService.addLoanToUser(userId, amount);
-//       res.json({ message: "Loan added successfully", user });
-//   } catch (error) {
-//       res.status(500).json({ error: error.message });
-//   }
-// };
-
-// const updateLoanStatus = async (req, res) => {
-//   const { userId, hasLoan } = req.body;
-//   try {
-//     const user = await userService.updateLoanStatus(userId, hasLoan);
-//     res.json({ message: "Loan status updated successfully", user });
-//   } catch (error) {
-//     res.status(500).json({ error: error.message });
-//   }
-// };
 
 const updateLoanStatus = async (req, res) => {
   const { userId, hasLoan } = req.body;
@@ -119,45 +108,37 @@ const updateLoanStatus = async (req, res) => {
   }
 };
 
-/////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////Not using repayLoan////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////////
-// 💳 User repays loan -- Godfrey
 const repayLoan = async (req, res) => {
   const { userId, amount } = req.body;
   try {
-      const user = await userService.repayLoan(userId, amount);
-      res.json({ message: "Loan repaid successfully", user });
-  } catch (error) {
-      res.status(500).json({ error: error.message });
-  }
-};
-/////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////Not using repayLoan////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-/*
-const refundUser = async (req, res) => {
-  const { userId, amount } = req.body;
-
-  try {
-    const updatedUser = await userService.refundUser(userId, amount);
-
-    res.json({
-      message: "User refunded successfully",
-      data: {
-        userId: updatedUser.id,
-        newBalance: updatedUser.loanBalance,
-        totalRefunded: updatedUser.refundedTotal,
-      },
+    // Convert amount to number and ensure it's positive
+    const repaymentAmount = Math.abs(Number(amount));
+    
+    // Get current loan balance
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { loanBalance: true }
+    });
+    
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    
+    // Calculate new loan balance
+    const newLoanBalance = Math.max(user.loanBalance - repaymentAmount, 0);
+    
+    // Update loan balance
+    const updatedUser = await userService.repayLoan(userId, repaymentAmount);
+    
+    res.json({ 
+      message: "Loan repaid successfully",
+      user: updatedUser
     });
   } catch (error) {
+    console.error("Error repaying loan:", error);
     res.status(500).json({ error: error.message });
   }
 };
-*/
-
 
 // 🔍 Get Loan Balance -- Godfrey
 const getLoanBalance = async (req, res) => {
@@ -213,19 +194,6 @@ const selectPackage = async (req, res) => {
   }
 };
 
-
-// const uploadExcel = async (req, res) => {
-//   try {
-//     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-
-//     const result = await userService.processExcelFile(req.file.path, req.file.filename);
-//     res.json(result);
-//   } catch (error) {
-//     console.error("Upload Error:", error);
-//     res.status(500).json({ error: error.message });
-//   }
-// };
-
 const uploadExcel = async (req, res) => {
   try {
     if (!req.file) {
@@ -275,37 +243,6 @@ const downloadLatestExcel = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-
-
-// const downloadExcel = async (req, res) => {
-//   try {
-//     const { filename } = req.params;
-//     const filePath = path.join(__dirname, "../uploads", filename);
-
-//     console.log("Attempting to download:", filePath);
-
-//     if (!fs.existsSync(filePath)) {
-//       console.error("File not found:", filePath);
-//       return res.status(404).json({ error: "File not found" });
-//     }
-
-//     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-//     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-
-//     res.download(filePath, filename, (err) => {
-//       if (err) {
-//         console.error("Download Error:", err);
-//         res.status(500).json({ error: "Failed to download file" });
-//       } else {
-//         console.log("File successfully downloaded:", filename);
-//       }
-//     });
-//   } catch (error) {
-//     console.error("Download Error:", error);
-//     res.status(500).json({ error: "Failed to download file" });
-//   }
-// };
-
 
 const downloadExcel = async (req, res) => {
   try {
@@ -407,26 +344,21 @@ const updateAdminLoanBalanceController = async (req, res) => {
   }
 };
 
-
-
 module.exports = {
-  refundUser,
   getAllUsers,
   createUser,
-  selectPackage,
   updateUser,
   deleteUser,
-  addLoan,
   repayLoan,
   getLoanBalance,
   uploadExcel,
   // downloadExcel,
   downloadLatestExcel,
-
   downloadExcel,
   updateUserPassword,
   updateLoanStatus,
   updateAdminLoanBalance,
   updateAdminLoanBalanceController,
-  refundUser
+  refundUser,
+  assignLoan
 };
