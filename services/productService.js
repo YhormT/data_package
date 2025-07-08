@@ -36,12 +36,6 @@ const setAllProductStockToZero = async (stockValue) => {
   });
 };
 
-
-
-// const deleteProduct = async (id) => {
-//   return await prisma.product.delete({ where: { id } });
-// };
-
 const deleteProduct = async (id) => {
   return await prisma.$transaction(async (tx) => {
     // Delete related cart items
@@ -61,12 +55,8 @@ const deleteProduct = async (id) => {
   });
 };
 
-
-// Price lookup by user role and product name/description
-// Extend this mapping as needed for your business logic
 const roleBasedPriceMap = {
-  // Example: 'SUPERAGENT': { '50GB': 100, '100GB': 180 }
-  // Fill with actual mappings as required
+
 };
 
 /**

@@ -76,11 +76,12 @@ class SmsService {
   }
   
   // Mark SMS as processed
-  async markSmsAsProcessed(smsId) {
+  async markSmsAsProcessed(smsId, prismaTx = null) {
+    const prismaClient = prismaTx || prisma;
     try {
-      return await prisma.smsMessage.update({
+      return await prismaClient.smsMessage.update({
         where: { id: smsId },
-        data: { isProcessed: true }
+        data: { isProcessed: true },
       });
     } catch (error) {
       console.error("Error marking SMS as processed:", error);

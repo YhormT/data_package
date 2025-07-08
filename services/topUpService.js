@@ -8,76 +8,78 @@ const verifyAndAutoTopUp = async (userId, referenceId, retries = 3) => {
   try {
     // Find SMS message with this reference
     const smsMessage = await smsService.findSmsByReference(referenceId);
-    
+
     if (!smsMessage) {
-      throw new Error('Invalid or already used reference number');
+      throw new Error("Invalid or already used reference number");
     }
-    
+
     if (!smsMessage.amount) {
-      throw new Error('Amount not found in SMS. Please contact support.');
+      throw new Error("Amount not found in SMS. Please contact support.");
     }
-    
+
     // Check if reference already exists in TopUp table
     const existingTopUp = await prisma.topUp.findUnique({
       where: { referenceId },
     });
-    
+
     if (existingTopUp) {
       throw new Error(`Reference ID ${referenceId} already exists.`);
     }
-    
+
     // Check if user exists
     const user = await prisma.user.findUnique({
       where: { id: parseInt(userId) },
-      select: { id: true, name: true, loanBalance: true }
+      select: { id: true, name: true, loanBalance: true },
     });
-    
+
     if (!user) {
-      throw new Error('User not found');
+      throw new Error("User not found");
     }
-    
-    // Process the auto top-up in a transaction
-    const result = await prisma.$transaction(async (tx) => {
-      // Create TopUp record with Approved status (auto-approved)
-      const topUp = await tx.topUp.create({
+
+    // --- Start Atomic Transaction ---
+    const result = await prisma.$transaction(async (prismaTx) => {
+      // 1. Create TopUp record with Approved status
+      const topUp = await prismaTx.topUp.create({
         data: {
           userId: parseInt(userId),
           referenceId: referenceId,
           amount: smsMessage.amount,
-          status: 'Approved', // Auto-approved via SMS
-          submittedBy: 'AUTO_SMS_VERIFICATION'
-        }
+          status: "Approved", // Auto-approved via SMS
+          submittedBy: "AUTO_SMS_VERIFICATION",
+        },
       });
-      
-      return { topUp };
+
+      // 2. Update user balance and create a transaction record
+      const transaction = await createTransaction(
+        parseInt(userId),
+        smsMessage.amount,
+        "TOPUP_APPROVED",
+        `Auto top-up via SMS verification - Ref: ${referenceId} for GHS ${smsMessage.amount}`,
+        `topup:${topUp.id}`,
+        prismaTx // Pass the transaction client
+      );
+
+      // 3. Mark the SMS as processed
+      await smsService.markSmsAsProcessed(smsMessage.id, prismaTx);
+
+      return {
+        success: true,
+        amount: smsMessage.amount,
+        newBalance: transaction.balance,
+        reference: referenceId,
+        topUpId: topUp.id,
+        message: "Top-up successful!",
+      };
     });
-    
-    // ✅ Use createTransaction to handle balance update AND transaction record
-    const transaction = await createTransaction(
-      parseInt(userId),
-      smsMessage.amount,
-      'TOPUP_APPROVED',
-      `Auto top-up via SMS verification - Ref: ${referenceId} for GHS ${smsMessage.amount}`,
-      `topup:${result.topUp.id}`
-    );
-    
-    // Mark SMS as processed
-    await smsService.markSmsAsProcessed(smsMessage.id);
-    
-    return {
-      success: true,
-      amount: smsMessage.amount,
-      newBalance: transaction.balance, // Get balance from transaction result
-      reference: referenceId,
-      topUpId: result.topUp.id,
-      message: 'Top-up successful!'
-    };
-    
+    // --- End Atomic Transaction ---
+
+    return result;
+
   } catch (error) {
     console.error(`Error in auto top-up (attempt ${4 - retries}):`, error);
     if (retries > 0) {
       // Exponential backoff: wait for 100ms, 200ms, 400ms
-      await new Promise(res => setTimeout(res, (4 - retries) * 100));
+      await new Promise((res) => setTimeout(res, (4 - retries) * 100));
       return verifyAndAutoTopUp(userId, referenceId, retries - 1);
     }
     throw new Error(error.message);

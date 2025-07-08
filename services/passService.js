@@ -1,6 +1,3 @@
-// const { PrismaClient } = require("@prisma/client");
-// const prisma = new PrismaClient();
-
 const prisma = require("../config/db");
 
 const passService = async (userId, newPassword) => {
@@ -11,7 +8,7 @@ const passService = async (userId, newPassword) => {
         }
 
         const user = await prisma.user.update({
-            where: { id: Number(userId) }, // Ensure userId is a number
+            where: { id: Number(userId) }, // Ensures userId is a number
             data: { password: newPassword }, // Update only password
         });
 
