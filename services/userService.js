@@ -14,8 +14,6 @@ const getAllUsers = async () => {
   });
 };
 
-
-
 const getUserByEmail = async (email) => {
   return await prisma.user.findUnique({ where: { email } });
 };
@@ -50,7 +48,7 @@ const addLoanToUser = async (userId, amount) => {
     // Record the transaction
     await createTransaction(
       userId,
-      amount, // Positive amount for adding to balance 
+      amount,
       "LOAN_ADD",
       `Loan amount ${amount} added to user balance`,
       `user:${userId}`
@@ -283,7 +281,7 @@ const repayLoan = async (userId, amount) => {
     const finalLoanBalance = Math.max(newLoanBalance, 0);
     const finalAdminLoanBalance = Math.max(newAdminLoanBalance, 0);
     // If loan fully repaid, set hasLoan to false (0)
-    const hasLoanAfterRepayment = finalLoanBalance > 0 ? true : false;
+    const hasLoanAfterRepayment = finalAdminLoanBalance > 0;
     
     // Update both loan balances and hasLoan
     const updatedUser = await prisma.user.update({
@@ -373,10 +371,6 @@ const deleteUser = async (id) => {
   });
 };
 
-
-
-
-
 const processExcelFile = async (filePath, filename, userId, network) => {
   try {
     const workbook = xlsx.readFile(filePath);
@@ -437,9 +431,6 @@ const processExcelFile = async (filePath, filename, userId, network) => {
   }
 };
 
-
-
-
 const getLatestFileData = async () => {
   const latestFile = await prisma.upload.findFirst({
     orderBy: { uploadedAt: "desc" },
@@ -477,9 +468,6 @@ const getFilePathById = async (fileId) => {
   }
 };
 
-
-
-
 // 🛠 Generate & Download Excel File
 const generateExcelFile = async (purchases) => {
   const data = purchases.map((p) => ({
@@ -510,9 +498,6 @@ const updatePassword = async (userId, newPassword) => {
     throw new Error(`Failed to update password for user ${userId}: ${error.message}`);
   }
 }
-
-
-
 
 module.exports = {
   getAllUsers,

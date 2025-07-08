@@ -1,101 +1,10 @@
 // const { PrismaClient } = require('@prisma/client');
 const { createTransaction } = require('./transactionService');
 const smsService = require('./smsService');
-// const prisma = new PrismaClient();
 
 const prisma = require("../config/db");
 
-
-// Add this new function to your existing topUpService.js
-// const verifyAndAutoTopUp = async (userId, referenceId) => {
-//   try {
-//     // Find SMS message with this reference
-//     const smsMessage = await smsService.findSmsByReference(referenceId);
-    
-//     if (!smsMessage) {
-//       throw new Error('Invalid or already used reference number');
-//     }
-    
-//     if (!smsMessage.amount) {
-//       throw new Error('Amount not found in SMS. Please contact support.');
-//     }
-    
-//     // Check if reference already exists in TopUp table
-//     const existingTopUp = await prisma.topUp.findUnique({
-//       where: { referenceId },
-//     });
-    
-//     if (existingTopUp) {
-//       throw new Error(`Reference ID ${referenceId} already exists.`);
-//     }
-    
-//     // Check if user exists
-//     const user = await prisma.user.findUnique({
-//       where: { id: parseInt(userId) },
-//       select: { id: true, name: true, loanBalance: true }
-//     });
-    
-//     if (!user) {
-//       throw new Error('User not found');
-//     }
-    
-//     // Process the auto top-up in a transaction
-//     const result = await prisma.$transaction(async (tx) => {
-//       // Create TopUp record with Approved status (auto-approved)
-//       const topUp = await tx.topUp.create({
-//         data: {
-//           userId: parseInt(userId),
-//           referenceId: referenceId,
-//           amount: smsMessage.amount,
-//           status: 'Approved', // Auto-approved via SMS
-//           submittedBy: 'AUTO_SMS_VERIFICATION'
-//         }
-//       });
-      
-//       // Update user balance
-//       const updatedUser = await tx.user.update({
-//         where: { id: parseInt(userId) },
-//         data: {
-//           loanBalance: {
-//             increment: smsMessage.amount
-//           }
-//         }
-//       });
-      
-//       // Create transaction record for the approved top-up
-//       await tx.transaction.create({
-//         data: {
-//           userId: parseInt(userId),
-//           amount: smsMessage.amount,
-//           balance: updatedUser.loanBalance,
-//           type: 'TOPUP_APPROVED',
-//           description: `Auto top-up via SMS verification - Ref: ${referenceId} for GHS ${smsMessage.amount}`,
-//           reference: `topup:${topUp.id}`
-//         }
-//       });
-      
-//       return { topUp, updatedUser };
-//     });
-    
-//     // Mark SMS as processed
-//     await smsService.markSmsAsProcessed(smsMessage.id);
-    
-//     return {
-//       success: true,
-//       amount: smsMessage.amount,
-//       newBalance: result.updatedUser.loanBalance,
-//       reference: referenceId,
-//       topUpId: result.topUp.id,
-//       message: 'Top-up successful!'
-//     };
-    
-//   } catch (error) {
-//     console.error("Error in auto top-up:", error);
-//     throw new Error(error.message);
-//   }
-// };
-
-const verifyAndAutoTopUp = async (userId, referenceId) => {
+const verifyAndAutoTopUp = async (userId, referenceId, retries = 3) => {
   try {
     // Find SMS message with this reference
     const smsMessage = await smsService.findSmsByReference(referenceId);
@@ -140,16 +49,13 @@ const verifyAndAutoTopUp = async (userId, referenceId) => {
         }
       });
       
-      // ✅ REMOVED MANUAL BALANCE UPDATE - Let createTransaction handle it
-      // Instead, just get the final balance after createTransaction
-      
       return { topUp };
     });
     
     // ✅ Use createTransaction to handle balance update AND transaction record
     const transaction = await createTransaction(
       parseInt(userId),
-      smsMessage.amount, // Positive amount for balance increase
+      smsMessage.amount,
       'TOPUP_APPROVED',
       `Auto top-up via SMS verification - Ref: ${referenceId} for GHS ${smsMessage.amount}`,
       `topup:${result.topUp.id}`
@@ -168,11 +74,15 @@ const verifyAndAutoTopUp = async (userId, referenceId) => {
     };
     
   } catch (error) {
-    console.error("Error in auto top-up:", error);
+    console.error(`Error in auto top-up (attempt ${4 - retries}):`, error);
+    if (retries > 0) {
+      // Exponential backoff: wait for 100ms, 200ms, 400ms
+      await new Promise(res => setTimeout(res, (4 - retries) * 100));
+      return verifyAndAutoTopUp(userId, referenceId, retries - 1);
+    }
     throw new Error(error.message);
   }
 };
-
 
 const createTopUp = async (userId, referenceId, amount, submittedBy) => {
   try {
@@ -236,47 +146,8 @@ const createTopUp = async (userId, referenceId, amount, submittedBy) => {
     throw new Error(`Could not process top-up request: ${error.message}`);
   }
 };
-// Approve or reject a top-up
-// const updateTopUpStatus = async (topUpId, status) => {
-//   try {
-//     // Ensure status is either "Approved" or "Rejected"
-//     if (!["Approved", "Rejected"].includes(status)) {
-//       throw new Error("Invalid status. Must be 'Approved' or 'Rejected'.");
-//     }
 
-//     // Get the top-up details
-//     const topUp = await prisma.topUp.findUnique({
-//       where: { id: topUpId }
-//     });
-
-//     if (!topUp) throw new Error("Top-up request not found.");
-
-//     // If approved, update the user's loanBalance
-//     if (status === "Approved") {
-//       await prisma.user.update({
-//         where: { id: topUp.userId },
-//         data: {
-//           loanBalance: {
-//             increment: topUp.amount
-//           }
-//         }
-//       });
-//     }
-
-//     // Update the top-up status
-//     const updatedTopUp = await prisma.topUp.update({
-//       where: { id: topUpId },
-//       data: { status }
-//     });
-
-//     return updatedTopUp;
-//   } catch (error) {
-//     console.error("Error updating top-up status:", error);
-//     throw new Error("Could not update top-up status.");
-//   }
-// };
-
-const updateTopUpStatus = async (topUpId, status) => {
+const updateTopUpStatus = async (topUpId, status, retries = 3) => {
   try {
     // Ensure status is either "Approved" or "Rejected"
     if (!["Approved", "Rejected"].includes(status)) {
@@ -292,15 +163,6 @@ const updateTopUpStatus = async (topUpId, status) => {
 
     // If approved, update the user's loanBalance
     if (status === "Approved") {
-      // await prisma.user.update({
-      //   where: { id: topUp.userId },
-      //   data: {
-      //     loanBalance: {
-      //       increment: topUp.amount
-      //     }
-      //   }
-      // });
-      
       // Record the successful top-up transaction
       await createTransaction(
         topUp.userId,
@@ -328,7 +190,12 @@ const updateTopUpStatus = async (topUpId, status) => {
 
     return updatedTopUp;
   } catch (error) {
-    console.error("Error updating top-up status:", error);
+    console.error(`Error updating top-up status (attempt ${4 - retries}):`, error);
+    if (retries > 0) {
+      // Exponential backoff: wait for 100ms, 200ms, 400ms
+      await new Promise(res => setTimeout(res, (4 - retries) * 100));
+      return updateTopUpStatus(topUpId, status, retries - 1);
+    }
     throw new Error("Could not update top-up status.");
   }
 };
@@ -374,7 +241,7 @@ const getAllTopUps = async (startDate, endDate) => {
   }
 
   return await prisma.topUp.findMany({
-    where: whereCondition, // If empty, fetches all top-ups
+    where: whereCondition,
     include: {
       user: {
         select: { id: true, name: true, email: true },

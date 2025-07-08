@@ -108,7 +108,7 @@ const getUserTransactions = async (userId, startDate = null, endDate = null, typ
         id: true,
         amount: true,
         balance: true,
-        previousBalance: true, // 👈 ADD THIS FIELD
+        previousBalance: true,
         type: true,
         description: true,
         reference: true,
@@ -131,10 +131,11 @@ const getUserTransactions = async (userId, startDate = null, endDate = null, typ
  * @param {Date} startDate - Start date filter (optional)
  * @param {Date} endDate - End date filter (optional)
  * @param {String} type - Transaction type filter (optional)
+ * @param {Number} userId - User ID filter (optional)
  * @returns {Promise<Array>} All transactions
  */
 
-const getAllTransactions = async (startDate = null, endDate = null, type = null) => {
+const getAllTransactions = async (startDate = null, endDate = null, type = null, userId = null) => {
   try {
     const whereClause = {};
     
@@ -149,6 +150,11 @@ const getAllTransactions = async (startDate = null, endDate = null, type = null)
     // Add type filter if provided
     if (type) {
       whereClause.type = type;
+    }
+
+    // Add user ID filter if provided
+    if (userId) {
+      whereClause.userId = parseInt(userId, 10);
     }
     
     return await prisma.transaction.findMany({
