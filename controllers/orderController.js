@@ -11,6 +11,7 @@ const {
 } = require("../services/orderService");
 
 const orderService = require('../services/orderService');
+const path = require('path');
 
 exports.submitCart = async (req, res) => {
   try {
@@ -302,6 +303,150 @@ exports.getOrderStats = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 },
+
+exports.downloadSimplifiedTemplate = (req, res) => {
+  const filePath = path.join(__dirname, '..', 'public', 'order_template.xlsx');
+  res.download(filePath, 'order_template.xlsx', (err) => {
+    if (err) {
+      console.error("Error downloading template:", err);
+      res.status(500).send("Could not download the file.");
+    }
+  });
+};
+
+// New Excel Upload Controller for Simplified (2-column) Agent Orders
+exports.uploadSimplifiedExcelOrders = async (req, res) => {
+  console.log('--- [UPLOAD SIMPLIFIED EXCEL ORDERS] Endpoint hit ---');
+  const prisma = require('../config/db');
+  const userService = require('../services/userService');
+  const cartService = require('../services/cartService');
+  const xlsx = require('xlsx');
+  const fs = require('fs');
+
+  try {
+    const { agentId, network } = req.body;
+    if (!req.file) {
+      console.log('ERROR: No file uploaded.');
+      return res.status(400).json({ success: false, message: 'No file uploaded.' });
+    }
+    if (!agentId || !network) {
+      return res.status(400).json({ success: false, message: 'Missing agentId or network.' });
+    }
+
+    const filePath = req.file.path;
+    let data = [];
+    try {
+      const workbook = xlsx.readFile(filePath);
+      const sheetName = workbook.SheetNames[0];
+      data = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
+      console.log('Simplified Excel parsed. Rows found:', data.length);
+    } catch (parseErr) {
+      console.log('ERROR parsing Excel file:', parseErr);
+      return res.status(400).json({ success: false, message: 'Failed to parse Excel file.' });
+    }
+
+    let total = data.length;
+    let errorReport = [];
+    if (total === 0) {
+      console.log('WARNING: Excel file parsed but contains zero rows.');
+    }
+
+    const agent = await userService.getUserById(parseInt(agentId));
+    if (!agent) {
+      fs.unlinkSync(filePath);
+      return res.status(400).json({ success: false, message: 'Agent not found.' });
+    }
+    const userRole = agent.role; 
+
+    let productsToAdd = [];
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      const phoneNumber = row['phone'] ? String(row['phone']).trim() : '';
+      const bundleAmount = row['bundle_amount'] ? String(row['bundle_amount']).trim() : '';
+      let rowErrors = [];
+
+      if (!phoneNumber) rowErrors.push('Missing phone number.');
+      if (!bundleAmount || isNaN(parseFloat(bundleAmount))) rowErrors.push('Invalid or missing bundle amount. It must be a number.');
+
+      if(rowErrors.length > 0) {
+        errorReport.push({ row: i + 2, errors: rowErrors });
+        continue; // Skip to next row
+      }
+
+      const productDescription = `${bundleAmount}GB`;
+      let productName;
+      if (userRole.toUpperCase() === 'USER') {
+        // For 'USER' role, product name is just the network
+        productName = network.toUpperCase();
+      } else {
+        // For all other roles, it's 'NETWORK - ROLE'
+        productName = `${network.toUpperCase()} - ${userRole.toUpperCase()}`;
+      }
+
+      // --- DEBUG LOGGING ---
+      console.log(`Searching for product with NAME: [${productName}] and DESCRIPTION: [${productDescription}]`);
+      // --------------------
+
+      const product = await prisma.product.findFirst({
+        where: {
+          name: productName,
+          description: productDescription,
+        },
+      });
+
+      if (!product) {
+        rowErrors.push(`Product not found for your user type (${userRole}) with bundle ${productDescription} and network ${network}.`);
+
+        // --- DEBUG: Log all available products for easier debugging ---
+        console.log('--- AVAILABLE PRODUCTS IN DATABASE ---');
+        const allProducts = await prisma.product.findMany({
+          select: { name: true, description: true, stock: true }
+        });
+        console.table(allProducts);
+        console.log('-----------------------------------------');
+        // ----------------------------------------------------------
+      } else {
+          productsToAdd.push({ 
+              product, 
+              quantity: 1, // Quantity is always 1 in the new flow
+              phoneNumber 
+            });
+      }
+
+      if (rowErrors.length > 0) {
+        errorReport.push({ row: i + 2, errors: rowErrors });
+      }
+    }
+
+    if (errorReport.length > 0) {
+      fs.unlinkSync(filePath);
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Validation errors occurred.',
+        summary: { total, successful: total - errorReport.length, failed: errorReport.length },
+        errors: errorReport 
+      });
+    }
+
+    // All validations passed, add to cart
+    let added = 0;
+    for (const item of productsToAdd) {
+      await cartService.addItemToCart(agent.id, item.product.id, item.quantity, item.phoneNumber);
+      added++;
+    }
+    fs.unlinkSync(filePath);
+    return res.json({ 
+        success: true, 
+        message: `${added} products added to cart.`,
+        summary: { total, successful: added, failed: 0 }
+    });
+
+  } catch (err) {
+    console.log('ERROR in uploadSimplifiedExcelOrders:', err);
+    if (req.file && req.file.path) try { fs.unlinkSync(req.file.path); } catch (e) {}
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
 
 exports.updateOrderStatus = async (req, res) => {
   try {

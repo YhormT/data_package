@@ -30,28 +30,44 @@ const createUser = async (req, res) => {
   }
 };
 
-const updateUser = async (req, res) => {
+const updateUser = async (req, res, io, userSockets) => {
   const { id } = req.params;
   const updatedData = req.body;
 
   try {
-    // const updatedUser = await userService.updateUser(id, updatedData);
-    const updatedUser = await userService.updateUser(parseInt(id), updatedData);
-    return res.status(200).json({
-      success: true,
-      message: "User updated successfully!",
-      data: updatedUser,
-    });
-  } catch (error) {
-    console.error("Error updating user:", error);
+    // 1. Fetch the user's current state before the update
+    const originalUser = await prisma.user.findUnique({ where: { id: parseInt(id) } });
 
-    if (error.code === "P2025") {
+    if (!originalUser) {
       return res.status(404).json({
         success: false,
         message: "User not found!",
       });
     }
 
+    // 2. Perform the update
+    const updatedUser = await userService.updateUser(parseInt(id), updatedData);
+
+    // 3. Check if the role was changed
+    if (updatedData.role && updatedData.role !== originalUser.role) {
+      console.log(`Role for user ${id} changed from ${originalUser.role} to ${updatedData.role}. Triggering logout.`);
+      
+      // 4. Emit a 'role-updated' event to the user's socket
+      const socketId = userSockets.get(parseInt(id));
+      if (socketId) {
+        console.log(`Sending role update to user ${id} on socket ${socketId}`);
+        io.to(socketId).emit('role-updated', { newRole: updatedData.role });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "User updated successfully!",
+      data: updatedUser,
+    });
+
+  } catch (error) {
+    console.error("Error updating user:", error);
     return res.status(500).json({
       success: false,
       message: "Something went wrong while updating the user!",

@@ -25,24 +25,41 @@ class SmsService {
   
   // Parse SMS message to extract reference and amount
   parseSmsMessage(message) {
-    // Updated patterns for your specific SMS format
+    // Updated patterns for multiple SMS formats
     const patterns = {
       // Pattern for "Payment received for GHS X.XX"
-      amount: /Payment received for GHS\s*([\d,]+\.?\d*)/i,
+      amountPattern1: /Payment received for GHS\s*([\d,]+\.?\d*)/i,
+      // Pattern for "You have received GHS X.XX"
+      amountPattern2: /You have received GHS\s*([\d,]+\.?\d*)/i,
       // Pattern for "Transaction ID: XXXXXXXXXX"
       transactionId: /Transaction ID:\s*(\d+)/i
     };
     
-    const amountMatch = message.match(patterns.amount);
+    const amountMatch1 = message.match(patterns.amountPattern1);
+    const amountMatch2 = message.match(patterns.amountPattern2);
     const transactionIdMatch = message.match(patterns.transactionId);
+    
+    // Try both patterns to find amount
+    let amount = null;
+    let amountMatch = null;
+    
+    if (amountMatch1) {
+      amountMatch = amountMatch1;
+      amount = parseFloat(amountMatch1[1].replace(',', ''));
+    } else if (amountMatch2) {
+      amountMatch = amountMatch2;
+      amount = parseFloat(amountMatch2[1].replace(',', ''));
+    }
     
     // Log for debugging
     console.log('Parsing SMS:', message);
-    console.log('Amount match:', amountMatch);
+    console.log('Amount match (Pattern 1):', amountMatch1);
+    console.log('Amount match (Pattern 2):', amountMatch2);
+    console.log('Final amount:', amount);
     console.log('Transaction ID match:', transactionIdMatch);
     
     return {
-      amount: amountMatch ? parseFloat(amountMatch[1].replace(',', '')) : null,
+      amount: amount,
       reference: transactionIdMatch ? transactionIdMatch[1] : null // Transaction ID goes to reference column
     };
   }
@@ -89,26 +106,33 @@ class SmsService {
     }
   }
 
-  // Inside SmsService class
-async getPaymentReceivedMessages() {
-  try {
-    return await prisma.smsMessage.findMany({
-      where: {
-        message: {
-          contains: "Payment received",
-          // mode: "insensitive" // Case-insensitive search
+  // Get payment received messages (updated to handle both formats)
+  async getPaymentReceivedMessages() {
+    try {
+      return await prisma.smsMessage.findMany({
+        where: {
+          OR: [
+            {
+              message: {
+                contains: "Payment received",
+              }
+            },
+            {
+              message: {
+                contains: "You have received",
+              }
+            }
+          ]
+        },
+        orderBy: {
+          createdAt: 'desc'
         }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    });
-  } catch (error) {
-    console.error("Error fetching 'Payment received' messages:", error);
-    throw new Error(`Failed to fetch payment messages: ${error.message}`);
+      });
+    } catch (error) {
+      console.error("Error fetching payment messages:", error);
+      throw new Error(`Failed to fetch payment messages: ${error.message}`);
+    }
   }
-}
-
 }
 
 module.exports = new SmsService();

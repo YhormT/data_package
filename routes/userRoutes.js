@@ -20,7 +20,8 @@ const {
 
 const upload = require("../middleware/uploadMiddleware");
 
-const router = express.Router();
+const createUserRouter = (io, userSockets) => {
+  const router = express.Router();
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, "uploads/"),
@@ -28,7 +29,7 @@ const storage = multer.diskStorage({
 });
 router.get("/", getAllUsers);
 router.post("/", createUser);
-router.put("/:id", updateUser);
+router.put("/:id", (req, res) => updateUser(req, res, io, userSockets));
 router.delete("/:id", deleteUser);
 router.post("/loan/assign", assignLoan);
 router.post("/refund", refundUser);
@@ -41,4 +42,7 @@ router.post("/upload-excel", upload.single("file"), uploadExcel);
 router.post("/download/:filename", downloadExcel);
 router.put('/:userId/updatePassword', updateUserPassword)
 
-module.exports = router;
+  return router;
+};
+
+module.exports = createUserRouter;

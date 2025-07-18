@@ -102,7 +102,7 @@ const createTopUp = async (userId, referenceId, amount, submittedBy) => {
       // Create the top-up record
       const newTopUp = await prismaTransaction.topUp.create({
         data: {
-          userId: parseInt(userId),
+          userId,
           referenceId,
           amount,
           submittedBy,
@@ -112,7 +112,7 @@ const createTopUp = async (userId, referenceId, amount, submittedBy) => {
       
       // Get current user balance
       const user = await prismaTransaction.user.findUnique({
-        where: { id: parseInt(userId) },
+        where: { id: userId },
         select: { loanBalance: true, name: true }
       });
       
@@ -126,10 +126,12 @@ const createTopUp = async (userId, referenceId, amount, submittedBy) => {
       // Create transaction record using the same prisma transaction
       const transaction = await prismaTransaction.transaction.create({
         data: {
-          userId: parseInt(userId),
+          userId,
+          // amount: 0, // No balance change yet since it's pending
           amount: amount, // No balance change yet since it's pending
           balance: newBalance,
           type: "TOPUP_REQUEST",
+          // description: `Top-up request created: ${referenceId} for ${amount}`,
           description: `${user.name} with transaction id ${referenceId} has requested a Top-up`,
           reference: `topup:${newTopUp.id}`
         }
@@ -185,7 +187,7 @@ const updateTopUpStatus = async (topUpId, status, retries = 3) => {
     // Update the top-up status
     const updatedTopUp = await prisma.topUp.update({
       where: { id: topUpId },
-      data: { status },
+      data: { status }
     });
 
     return updatedTopUp;
@@ -202,45 +204,30 @@ const updateTopUpStatus = async (topUpId, status, retries = 3) => {
 
 // Get all top-ups with filtering options (e.g., status, date range)
 const getTopUps = async (startDate, endDate, status) => {
-  const maxRetries = 3;
-  let attempt = 0;
-
-  while (attempt < maxRetries) {
-    try {
-      const whereClause = {
-        createdAt: {
-          gte: new Date(startDate),
-          lte: new Date(endDate),
-        }
-      };
-
-      if (status) whereClause.status = status; // Filter by status if provided
-
-      const topUps = await prisma.topUp.findMany({
-        where: whereClause,
-        orderBy: {
-          createdAt: 'desc',
-        },
-        include: {
-          user: { select: { name: true, email: true } }
-        }
-      });
-
-      return topUps; // Success, exit the loop
-    } catch (error) {
-      attempt++;
-      console.error(`Error fetching top-ups (attempt ${attempt} of ${maxRetries}):`, error);
-
-      if (error.code === 'P1017' && attempt < maxRetries) {
-        const delay = attempt * 1000;
-        console.log(`Connection error detected. Retrying in ${delay}ms...`);
-        await new Promise(res => setTimeout(res, delay)); // wait before retrying
-      } else {
-        // re-throw if not a connection error or retries exhausted
-        console.error("Failed to fetch top-ups after multiple retries.");
-        throw new Error("Could not retrieve top-up records");
+  try {
+    const whereClause = {
+      createdAt: {
+        gte: new Date(startDate),
+        lte: new Date(endDate),
       }
-    }
+    };
+
+    if (status) whereClause.status = status; // Filter by status if provided
+
+    const topUps = await prisma.topUp.findMany({
+      where: whereClause,
+      orderBy: {
+        createdAt: 'desc',
+      },
+      include: {
+        user: { select: { name: true, email: true } }
+      }
+    });
+
+    return topUps;
+  } catch (error) {
+    console.error("Error fetching top-ups:", error);
+    throw new Error("Could not retrieve top-up records");
   }
 };
 

@@ -96,8 +96,6 @@ const updateLoanStatus = async (userId, hasLoan) => {
   }
 };
 
-
-
 const updateUserLoanStatus = async (userId, hasLoan, deductionAmount) => {
   console.log("Updating user loan status:", { userId, hasLoan, deductionAmount });
   try {
