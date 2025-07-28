@@ -48,15 +48,37 @@ const updateUser = async (req, res, io, userSockets) => {
     // 2. Perform the update
     const updatedUser = await userService.updateUser(parseInt(id), updatedData);
 
-    // 3. Check if the role was changed
-    if (updatedData.role && updatedData.role !== originalUser.role) {
-      console.log(`Role for user ${id} changed from ${originalUser.role} to ${updatedData.role}. Triggering logout.`);
-      
-      // 4. Emit a 'role-updated' event to the user's socket
+    // 3. Determine if a logout or refresh is needed
+    const oldRole = originalUser.role;
+    const newRole = updatedData.role;
+    const roleChanged = oldRole !== newRole;
+    const passwordChanged = updatedData.password && updatedData.password.length > 0;
+
+    let needsLogout = false;
+    let logoutMessage = '';
+
+    if (roleChanged) {
+      console.log(`[Socket Debug] Role change detected for user ID: ${id}.`);
+      needsLogout = true;
+      logoutMessage = 'Your role has been changed. Please log in again to apply new permissions.';
+    } else {
+      console.log(`[Socket Debug] No role change detected.`);
+    }
+
+    if (passwordChanged) {
+      console.log(`[Socket Debug] Password change detected for user ID: ${id}.`);
+      needsLogout = true;
+      logoutMessage = 'Your password was changed by an administrator. Please log in again.';
+    }
+
+    // 4. Emit events if the user is online
+    if (needsLogout) {
       const socketId = userSockets.get(parseInt(id));
       if (socketId) {
-        console.log(`Sending role update to user ${id} on socket ${socketId}`);
-        io.to(socketId).emit('role-updated', { newRole: updatedData.role });
+        console.log(`[Socket Debug] Found socket ID: ${socketId}. Emitting 'force-logout' event.`);
+        io.to(socketId).emit('force-logout', { message: logoutMessage });
+      } else {
+        console.log(`[Socket Debug] No socket ID found for user ID: ${id}. User might be offline.`);
       }
     }
 

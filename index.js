@@ -32,8 +32,9 @@ io.on('connection', (socket) => {
   console.log('a user connected', socket.id);
 
   socket.on('register', (userId) => {
-    console.log(`Registering user ${userId} with socket ${socket.id}`);
+    console.log(`[Socket Debug] Received 'register' event for user ID: ${userId} with socket ID: ${socket.id}`);
     userSockets.set(userId, socket.id);
+    console.log(`[Socket Debug] Current userSockets map:`, userSockets);
   });
 
   socket.on('disconnect', () => {
