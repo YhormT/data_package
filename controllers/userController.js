@@ -54,31 +54,27 @@ const updateUser = async (req, res, io, userSockets) => {
     const roleChanged = oldRole !== newRole;
     const passwordChanged = updatedData.password && updatedData.password.length > 0;
 
-    let needsLogout = false;
-    let logoutMessage = '';
-
+    // 4. Check for role change and emit 'role-updated' event
     if (roleChanged) {
-      console.log(`[Socket Debug] Role change detected for user ID: ${id}.`);
-      needsLogout = true;
-      logoutMessage = 'Your role has been changed. Please log in again to apply new permissions.';
-    } else {
-      console.log(`[Socket Debug] No role change detected.`);
-    }
-
-    if (passwordChanged) {
-      console.log(`[Socket Debug] Password change detected for user ID: ${id}.`);
-      needsLogout = true;
-      logoutMessage = 'Your password was changed by an administrator. Please log in again.';
-    }
-
-    // 4. Emit events if the user is online
-    if (needsLogout) {
       const socketId = userSockets.get(parseInt(id));
       if (socketId) {
-        console.log(`[Socket Debug] Found socket ID: ${socketId}. Emitting 'force-logout' event.`);
-        io.to(socketId).emit('force-logout', { message: logoutMessage });
+        console.log(`[Socket Debug] Role change for user ${id}. Emitting 'role-updated' to socket ${socketId}.`);
+        io.to(socketId).emit('role-updated', { newRole: newRole });
       } else {
-        console.log(`[Socket Debug] No socket ID found for user ID: ${id}. User might be offline.`);
+        console.log(`[Socket Debug] User ${id} is offline. Cannot send role update.`);
+      }
+    }
+
+    // 5. Check for password change and emit 'force-logout' event
+    if (passwordChanged) {
+      const socketId = userSockets.get(parseInt(id));
+      if (socketId) {
+        console.log(`[Socket Debug] Password change for user ${id}. Emitting 'force-logout' to socket ${socketId}.`);
+        io.to(socketId).emit('force-logout', { 
+          message: 'Your password was changed by an administrator. Please log in again.' 
+        });
+      } else {
+        console.log(`[Socket Debug] User ${id} is offline. Cannot send force-logout.`);
       }
     }
 
