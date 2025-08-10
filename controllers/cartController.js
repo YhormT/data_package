@@ -3,6 +3,7 @@ const {
   getUserCart,
   removeItemFromCart,
   getAllCarts,
+  clearUserCart,
 } = require("../services/cartService");
 
 exports.addToCart = async (req, res) => {
@@ -39,5 +40,14 @@ exports.getAllCarts = async (req, res) => {
     res.json(carts);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+};
+
+exports.clearCart = async (req, res) => {
+  try {
+    await clearUserCart(parseInt(req.params.userId));
+    res.json({ success: true, message: "Cart cleared successfully" });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 };

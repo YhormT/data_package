@@ -71,4 +71,21 @@ const getAllCarts = async () => {
   });
 };
 
-module.exports = { addItemToCart, getUserCart, removeItemFromCart, getAllCarts };
+const clearUserCart = async (userId) => {
+  const cart = await prisma.cart.findUnique({
+    where: { userId },
+  });
+
+  if (!cart) {
+    // If there's no cart, there's nothing to clear.
+    return { message: "Cart is already empty." };
+  }
+
+  await prisma.cartItem.deleteMany({
+    where: { cartId: cart.id },
+  });
+
+  return { message: "Cart cleared successfully." };
+};
+
+module.exports = { addItemToCart, getUserCart, removeItemFromCart, getAllCarts, clearUserCart };

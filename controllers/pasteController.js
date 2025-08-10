@@ -63,6 +63,8 @@ exports.pasteAndProcessOrders = async (req, res) => {
 
       if (!product) {
         rowErrors.push(`Product not found for your user type (${userRole}) with bundle ${productDescription} and network ${network}.`);
+      } else if (product.stock <= 0) {
+        rowErrors.push(`Product with bundle ${productDescription} and network ${network} is out of stock.`);
       } else {
         productsToAdd.push({ product, quantity: 1, phoneNumber });
       }

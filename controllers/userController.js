@@ -48,31 +48,20 @@ const updateUser = async (req, res, io, userSockets) => {
     // 2. Perform the update
     const updatedUser = await userService.updateUser(parseInt(id), updatedData);
 
-    // 3. Determine if a logout or refresh is needed
-    const oldRole = originalUser.role;
-    const newRole = updatedData.role;
-    const roleChanged = oldRole !== newRole;
+    // 3. Determine if a logout is needed
+    const roleChanged = updatedData.role && originalUser.role !== updatedData.role;
     const passwordChanged = updatedData.password && updatedData.password.length > 0;
 
-    // 4. Check for role change and emit 'role-updated' event
-    if (roleChanged) {
-      const socketId = userSockets.get(parseInt(id));
+    // 4. If role or password changed, force the user to log out
+    if (roleChanged || passwordChanged) {
+      const socketId = userSockets.get(id);
       if (socketId) {
-        console.log(`[Socket Debug] Role change for user ${id}. Emitting 'role-updated' to socket ${socketId}.`);
-        io.to(socketId).emit('role-updated', { newRole: newRole });
-      } else {
-        console.log(`[Socket Debug] User ${id} is offline. Cannot send role update.`);
-      }
-    }
-
-    // 5. Check for password change and emit 'force-logout' event
-    if (passwordChanged) {
-      const socketId = userSockets.get(parseInt(id));
-      if (socketId) {
-        console.log(`[Socket Debug] Password change for user ${id}. Emitting 'force-logout' to socket ${socketId}.`);
-        io.to(socketId).emit('force-logout', { 
-          message: 'Your password was changed by an administrator. Please log in again.' 
-        });
+        const message = roleChanged
+          ? 'Your user role has been changed by an administrator. Please log in again.'
+          : 'Your password was changed by an administrator. Please log in again.';
+        
+        console.log(`[Socket Debug] Forcing logout for user ${id}. Reason: ${roleChanged ? 'Role Change' : 'Password Change'}.`);
+        io.to(socketId).emit('force-logout', { message });
       } else {
         console.log(`[Socket Debug] User ${id} is offline. Cannot send force-logout.`);
       }
@@ -92,8 +81,6 @@ const updateUser = async (req, res, io, userSockets) => {
     });
   }
 };
-
-
 
 // Admin adds loan to user  -- Godfrey
 const assignLoan = async (req, res) => {

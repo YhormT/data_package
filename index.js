@@ -31,10 +31,18 @@ const userSockets = new Map();
 io.on('connection', (socket) => {
   console.log('a user connected', socket.id);
 
-  socket.on('register', (userId) => {
-    console.log(`[Socket Debug] Received 'register' event for user ID: ${userId} with socket ID: ${socket.id}`);
-    userSockets.set(userId, socket.id);
-    console.log(`[Socket Debug] Current userSockets map:`, userSockets);
+  socket.on('register', (data) => {
+    // The frontend might send the ID directly or in an object { userId: '123' }.
+    // This handles both cases to ensure we always get the ID.
+    const userId = (typeof data === 'object' && data.userId) ? data.userId : data;
+
+    if (userId) {
+      console.log(`[Socket Debug] Received 'register' event for user ID: ${userId} with socket ID: ${socket.id}`);
+      userSockets.set(userId, socket.id);
+      console.log(`[Socket Debug] Current userSockets map:`, userSockets);
+    } else {
+      console.error(`[Socket Error] Received invalid data for 'register' event:`, data);
+    }
   });
 
   socket.on('disconnect', () => {
@@ -62,7 +70,7 @@ app.use('/api/users', userRoutes);
 
 app.use('/api/order', pasteRoutes);
 app.use('/api/auth', authRoutes);
-app.use('/cart', cartRoutes);
+app.use('/api/cart', cartRoutes);
 app.use('/products', productRoutes);
 app.use('/order', orderRoutes);
 app.use('/api', topUpRoutes);
