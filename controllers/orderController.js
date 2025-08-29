@@ -31,9 +31,26 @@ exports.submitCart = async (req, res) => {
 
 exports.getAllOrders = async (req, res) => {
   try {
-    const orders = await getAllOrders();
-    res.json(orders);
+    const { limit = 100, offset = 0 } = req.query;
+    const result = await getAllOrders(parseInt(limit), parseInt(offset));
+    
+    // Transform data to match frontend expectations
+    const transformedData = result.orders.flatMap(order => 
+      order.items.map(item => ({
+        ...item,
+        orderId: order.id,
+        createdAt: order.createdAt,
+        user: order.user,
+        order: {
+          ...order,
+          items: [item] // Only include current item to avoid status mix-ups
+        }
+      }))
+    );
+    
+    res.json(transformedData);
   } catch (error) {
+    console.error('Error in getAllOrders:', error);
     res.status(500).json({ error: error.message });
   }
 };

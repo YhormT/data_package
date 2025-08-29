@@ -73,14 +73,16 @@ const submitCart = async (userId, mobileNumber = null) => {
   });
 };
 
-async function getAllOrders() {
-  return await prisma.order.findMany({
+async function getAllOrders(limit = 100, offset = 0) {
+  // Add pagination and optimize query for better performance
+  const orders = await prisma.order.findMany({
+    take: limit,
+    skip: offset,
     orderBy: {
       createdAt: "desc",
     },
     include: {
       user: {
-        // Include user details --- just to remember - Godfrey
         select: {
           id: true,
           name: true,
@@ -91,7 +93,6 @@ async function getAllOrders() {
       items: {
         include: {
           product: {
-            // Include product details --- just to remember - Godfrey
             select: {
               id: true,
               name: true,
@@ -103,6 +104,15 @@ async function getAllOrders() {
       },
     },
   });
+  
+  // Get total count for pagination
+  const totalCount = await prisma.order.count();
+  
+  return {
+    orders,
+    totalCount,
+    hasMore: (offset + limit) < totalCount
+  };
 }
 
 // Admin: Process and complete an order
