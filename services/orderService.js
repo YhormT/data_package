@@ -1,4 +1,5 @@
 const prisma = require("../config/db");
+const cache = require("../utils/cache");
 
 const { createTransaction } = require("./transactionService");
 const userService = require("./userService");
@@ -74,14 +75,18 @@ const submitCart = async (userId, mobileNumber = null) => {
 };
 
 async function getAllOrders(limit = 100, offset = 0) {
-  // Add pagination and optimize query for better performance
+  // Optimize query with selective field loading and better pagination
   const orders = await prisma.order.findMany({
-    take: limit,
+    take: Math.min(limit, 500), // Cap limit to prevent excessive memory usage
     skip: offset,
     orderBy: {
       createdAt: "desc",
     },
-    include: {
+    select: {
+      id: true,
+      createdAt: true,
+      status: true,
+      mobileNumber: true,
       user: {
         select: {
           id: true,
@@ -91,7 +96,12 @@ async function getAllOrders(limit = 100, offset = 0) {
         },
       },
       items: {
-        include: {
+        select: {
+          id: true,
+          productId: true,
+          quantity: true,
+          mobileNumber: true,
+          status: true,
           product: {
             select: {
               id: true,
@@ -188,19 +198,183 @@ const processOrderItem = async (orderItemId, status) => {
 
 // ... (rest of the code remains the same)
 
-const getOrderStatus = async () => {
-  return await prisma.order.findMany({
+const getOrderStatus = async (options = {}) => {
+  const {
+    page = 1,
+    limit = 50,
+    orderIdFilter,
+    phoneNumberFilter,
+    selectedProduct,
+    selectedStatusMain,
+    selectedDate,
+    startTime,
+    endTime,
+    sortOrder = 'newest',
+    showNewRequestsOnly = false
+  } = options;
+
+  // Build where clause for filtering
+  const where = {};
+  const itemsWhere = {};
+
+  // Date filtering
+  if (selectedDate) {
+    const startDate = new Date(selectedDate);
+    const endDate = new Date(selectedDate);
+    endDate.setDate(endDate.getDate() + 1);
+    
+    if (startTime && endTime) {
+      const startDateTime = new Date(`${selectedDate}T${startTime}`);
+      const endDateTime = new Date(`${selectedDate}T${endTime}`);
+      where.createdAt = {
+        gte: startDateTime,
+        lte: endDateTime
+      };
+    } else {
+      where.createdAt = {
+        gte: startDate,
+        lt: endDate
+      };
+    }
+  }
+
+  // New requests filter (last 5 minutes)
+  if (showNewRequestsOnly) {
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    where.createdAt = {
+      gte: fiveMinutesAgo
+    };
+  }
+
+  // Phone number filter - search both order-level and item-level mobile numbers
+  if (phoneNumberFilter) {
+    where.OR = [
+      {
+        mobileNumber: {
+          contains: phoneNumberFilter
+        }
+      },
+      {
+        items: {
+          some: {
+            mobileNumber: {
+              contains: phoneNumberFilter
+            }
+          }
+        }
+      }
+    ];
+  }
+
+  // Order ID filter
+  if (orderIdFilter) {
+    where.id = parseInt(orderIdFilter) || undefined;
+  }
+
+  // Product filter
+  if (selectedProduct) {
+    itemsWhere.product = {
+      name: selectedProduct
+    };
+  }
+
+  // Status filter
+  if (selectedStatusMain) {
+    itemsWhere.status = selectedStatusMain;
+  }
+
+  // Add items filter to where clause if needed
+  if (Object.keys(itemsWhere).length > 0) {
+    where.items = {
+      some: itemsWhere
+    };
+  }
+
+  // Calculate pagination
+  const skip = (page - 1) * limit;
+  
+  // Get total count for pagination
+  const totalCount = await prisma.order.count({ where });
+  
+  // Determine sort order
+  const orderBy = sortOrder === 'newest' 
+    ? { createdAt: 'desc' }
+    : { createdAt: 'asc' };
+
+  // Fetch orders with optimized query
+  const orders = await prisma.order.findMany({
+    where,
+    skip,
+    take: limit,
+    orderBy,
     include: {
       items: {
         include: {
-          product: true
+          product: {
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              price: true
+            }
+          }
         }
       },
       user: {
-        select: { id: true, name: true, email: true }
+        select: { id: true, name: true, email: true, phone: true }
       }
     }
   });
+
+  // Transform data to match frontend expectations - include nested order structure
+  const transformedData = [];
+  const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+  
+  for (const order of orders) {
+    const orderCreatedAt = new Date(order.createdAt).getTime();
+    const isNew = orderCreatedAt > fiveMinutesAgo;
+    
+    for (const item of order.items) {
+      transformedData.push({
+        id: item.id,
+        orderId: order.id,
+        productId: item.productId,
+        quantity: item.quantity,
+        mobileNumber: item.mobileNumber || order.mobileNumber,
+        user: {
+          id: order.user.id,
+          name: order.user.name,
+          email: order.user.email,
+          phone: order.user.phone
+        },
+        product: {
+          id: item.product.id,
+          name: item.product.name,
+          description: item.product.description,
+          price: item.product.price
+        },
+        order: {
+          id: order.id,
+          createdAt: order.createdAt,
+          items: [{
+            status: item.status
+          }]
+        },
+        isNew
+      });
+    }
+  }
+
+  return {
+    data: transformedData,
+    pagination: {
+      total: totalCount,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(totalCount / limit),
+      hasMore: (page * limit) < totalCount
+    }
+  };
 };
 
 const getOrderHistory = async (userId) => {
@@ -414,24 +588,26 @@ const orderService = {
       },
     });
     
-    // Transform data for frontend efficiency
-    // This eliminates the need for frontend data processing
-    const transformedItems = orders.flatMap(order => 
-      order.items.map(item => ({
-        id: item.id,
-        orderId: order.id,
-        mobileNumber: order.mobileNumber,
-        user: order.user,
-        createdAt: order.createdAt,
-        product: item.product,
-        status: item.status,
-        order: {
-          id: order.id,
+    // Transform data more efficiently - avoid flatMap and deep copying
+    const transformedItems = [];
+    for (const order of orders) {
+      for (const item of order.items) {
+        transformedItems.push({
+          id: item.id,
+          orderId: order.id,
+          mobileNumber: order.mobileNumber,
+          user: order.user,
           createdAt: order.createdAt,
-          items: [{ status: item.status }] // Only include what's needed
-        }
-      }))
-    );
+          product: item.product,
+          status: item.status,
+          order: {
+            id: order.id,
+            createdAt: order.createdAt,
+            items: [{ status: item.status }]
+          }
+        });
+      }
+    }
     
     return {
       items: transformedItems,
@@ -445,45 +621,33 @@ const orderService = {
   },
   
   async getOrderStats() {
-    // Get just the counts for dashboard stats
-    const totalOrders = await prisma.order.count();
-    
-    const pendingCount = await prisma.order.count({
-      where: {
-        items: {
-          some: {
-            status: 'Pending'
-          }
-        }
-      }
-    });
-    
-    const completedCount = await prisma.order.count({
-      where: {
-        items: {
-          some: {
-            status: 'Completed'
-          }
-        }
-      }
-    });
-    
-    const processingCount = await prisma.order.count({
-      where: {
-        items: {
-          some: {
-            status: 'Processing'
-          }
-        }
-      }
-    });
-    
-    return {
-      total: totalOrders,
-      pending: pendingCount,
-      completed: completedCount,
-      processing: processingCount
+    // Cache order stats for 5 minutes since they don't change frequently
+    const cacheKey = 'order_stats';
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    // Use more efficient aggregation query
+    const stats = await prisma.$queryRaw`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN EXISTS(SELECT 1 FROM OrderItem oi WHERE oi.orderId = o.id AND oi.status = 'Pending') THEN 1 ELSE 0 END) as pending,
+        SUM(CASE WHEN EXISTS(SELECT 1 FROM OrderItem oi WHERE oi.orderId = o.id AND oi.status = 'Completed') THEN 1 ELSE 0 END) as completed,
+        SUM(CASE WHEN EXISTS(SELECT 1 FROM OrderItem oi WHERE oi.orderId = o.id AND oi.status = 'Processing') THEN 1 ELSE 0 END) as processing
+      FROM \`Order\` o
+    `;
+
+    const result = {
+      total: Number(stats[0]?.total || 0),
+      pending: Number(stats[0]?.pending || 0),
+      completed: Number(stats[0]?.completed || 0),
+      processing: Number(stats[0]?.processing || 0)
     };
+
+    // Cache for 5 minutes
+    cache.set(cacheKey, result, 300000);
+    return result;
   },
   
   async updateOrderStatus(orderId, status) {
