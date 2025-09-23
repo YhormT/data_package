@@ -662,6 +662,82 @@ const orderService = {
         }
       }
     });
+  },
+
+  // Create direct order from ext_agent system
+  async createDirectOrder(userId, items, totalAmount) {
+    console.log(`🔄 [ORDER SERVICE] Starting createDirectOrder for user ${userId}`);
+    console.log(`🔄 [ORDER SERVICE] Items to create:`, items);
+    console.log(`🔄 [ORDER SERVICE] Total amount: ${totalAmount}`);
+    
+    return await prisma.$transaction(async (tx) => {
+      // Validate user exists
+      console.log(`🔍 [ORDER SERVICE] Looking up user ${userId}...`);
+      const user = await tx.user.findUnique({ where: { id: parseInt(userId) } });
+      if (!user) {
+        console.log(`❌ [ORDER SERVICE] User ${userId} not found`);
+        throw new Error("User not found");
+      }
+
+      console.log(`✅ [ORDER SERVICE] Found user: ${user.name} (${user.email})`);
+      console.log(`💰 User ${userId} current loanBalance: ${user.loanBalance}`);
+      console.log(`💰 Order total amount: ${totalAmount}`);
+
+      // Check if user has sufficient balance (this should already be checked by ext_agent)
+      if (user.loanBalance < totalAmount) {
+        throw new Error("Insufficient balance to place order");
+      }
+
+      // Create order
+      console.log(`🔄 [ORDER SERVICE] Creating order in database...`);
+      const order = await tx.order.create({
+        data: {
+          userId: parseInt(userId),
+          mobileNumber: items[0]?.mobileNumber || null, // Use mobile number from first item
+          items: {
+            create: items.map((item) => ({
+              productId: parseInt(item.productId),
+              quantity: parseInt(item.quantity),
+              price: parseFloat(item.price),
+              mobileNumber: item.mobileNumber || null,
+              status: "Pending"
+            }))
+          }
+        },
+        include: {
+          items: { include: { product: true } },
+          user: true
+        }
+      });
+      
+      console.log(`✅ [ORDER SERVICE] Order created with ID: ${order.id}`);
+
+      // Deduct balance from user's loanBalance
+      await tx.user.update({
+        where: { id: parseInt(userId) },
+        data: {
+          loanBalance: {
+            decrement: totalAmount
+          }
+        }
+      });
+
+      // Record transaction for the order (similar to submitCart)
+      await createTransaction(
+        parseInt(userId),
+        -totalAmount, // Negative amount for deduction
+        "ORDER",
+        `Order #${order.id} placed via ext_agent system`,
+        `order:${order.id}`,
+        tx // Pass the transaction context
+      );
+
+      console.log(`✅ Deducted ${totalAmount} from user ${userId} loanBalance`);
+      console.log(`✅ Created transaction record for order ${order.id}`);
+      console.log(`✅ Created order ${order.id} with ${order.items.length} items`);
+
+      return order;
+    });
   }
 };
 
@@ -674,6 +750,7 @@ module.exports = {
   getOrderStatus,
   getOrderHistory,
   updateOrderItemsStatus,
+  createDirectOrder: orderService.createDirectOrder,
 
   orderService
 };

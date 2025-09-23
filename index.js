@@ -16,6 +16,7 @@ const salesRoutes = require('./routes/salesRoutes');
 const smsRoutes = require('./routes/smsRoutes');
 const announcementRoutes = require('./routes/announcementRoutes');
 const pasteRoutes = require('./routes/pasteRoutes');
+const resetRoutes = require('./routes/resetRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -81,6 +82,7 @@ app.use('/api/sales', salesRoutes);
 app.use('/api/sms', smsRoutes);
 app.use('/api/announcement', announcementRoutes);
 app.use('/api', pasteRoutes);
+app.use('/api/reset', resetRoutes);
 
 
 const PORT = process.env.PORT || 5000;

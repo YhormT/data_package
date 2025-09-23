@@ -11,6 +11,8 @@ const {
   uploadExcel,
   downloadLatestExcel,
   updateUserPassword,
+  updateUserProfile,
+  getUserProfile,
   updateLoanStatus,
   updateAdminLoanBalance,
   updateAdminLoanBalanceController,
@@ -41,6 +43,8 @@ router.put("/updateLoan/loanAmount", updateAdminLoanBalance);
 router.post("/upload-excel", upload.single("file"), uploadExcel);
 router.post("/download/:filename", downloadExcel);
 router.put('/:userId/updatePassword', updateUserPassword)
+router.get('/:userId', getUserProfile);
+router.put('/:userId/profile', updateUserProfile);
 
   return router;
 };

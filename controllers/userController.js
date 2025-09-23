@@ -327,6 +327,70 @@ const updateUserPassword = async (req, res) => {
   }
 }
 
+const updateUserProfile = async (req, res) => {
+  const { userId } = req.params;
+  const { name, email } = req.body;
+
+  try {
+    // Validate input
+    if (!name || !email) {
+      return res.status(400).json({
+        success: false,
+        message: "Name and email are required"
+      });
+    }
+
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a valid email address"
+      });
+    }
+
+    const updatedUser = await userService.updateProfile(parseInt(userId), { name, email });
+    
+    res.status(200).json({
+      success: true,
+      message: "Profile updated successfully",
+      data: updatedUser
+    });
+  } catch (error) {
+    console.error("Error updating user profile:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+}
+
+const getUserProfile = async (req, res) => {
+  const { userId } = req.params;
+
+  try {
+    const user = await userService.getUserById(parseInt(userId));
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
+    // Return user data without sensitive information
+    const { password, ...userProfile } = user;
+    
+    res.status(200).json(userProfile);
+  } catch (error) {
+    console.error("Error fetching user profile:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch user profile"
+    });
+  }
+}
+
 
 
 const updateAdminLoanBalance = async (req, res) => {
@@ -377,6 +441,8 @@ module.exports = {
   downloadLatestExcel,
   downloadExcel,
   updateUserPassword,
+  updateUserProfile,
+  getUserProfile,
   updateLoanStatus,
   updateAdminLoanBalance,
   updateAdminLoanBalanceController,

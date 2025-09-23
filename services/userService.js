@@ -497,6 +497,38 @@ const updatePassword = async (userId, newPassword) => {
   }
 }
 
+const updateProfile = async (userId, profileData) => {
+  try {
+    const { name, email } = profileData;
+    
+    // Check if email is already taken by another user
+    if (email) {
+      const existingUser = await prisma.user.findFirst({
+        where: {
+          email: email,
+          id: { not: userId }
+        }
+      });
+      
+      if (existingUser) {
+        throw new Error('Email address is already in use by another user');
+      }
+    }
+    
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(name && { name }),
+        ...(email && { email })
+      },
+    });
+    
+    return updatedUser;
+  } catch (error) {
+    throw new Error(`Failed to update profile for user ${userId}: ${error.message}`);
+  }
+}
+
 module.exports = {
   getAllUsers,
   getUserByEmail,
@@ -513,6 +545,7 @@ module.exports = {
   getUserLoanBalance,
   generateExcelFile,
   updatePassword,
+  updateProfile,
   processExcelFile,
   getLatestFileData,
   getFilePathById,

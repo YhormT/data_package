@@ -32,9 +32,15 @@ router.get('/admin/allorder', orderController.getOrderStatus);
 
 router.get("/admin/:userId", orderController.getOrderHistory);
 
+// Get specific order by ID for status sync
+router.get("/status/:orderId", orderController.getOrderById);
+
 // User: View completed orders
 router.get('/user/completed/:userId', orderController.getUserCompletedOrdersController);
 
 router.put('/orders/:orderId/status', orderController.updateOrderItemsStatus);
+
+// Direct order creation from ext_agent system
+router.post('/create-direct', orderController.createDirectOrder);
 
 module.exports = router;

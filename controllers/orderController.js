@@ -506,3 +506,91 @@ exports.updateOrderStatus = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 }
+
+// Direct order creation from ext_agent system
+exports.createDirectOrder = async (req, res) => {
+  try {
+    console.log(`🚀 [DIRECT ORDER] Endpoint hit - POST /order/create-direct`);
+    console.log(`🚀 [DIRECT ORDER] Request body:`, req.body);
+    
+    const { userId, items, totalAmount } = req.body;
+    
+    console.log(`📋 Creating direct order for user ${userId}...`);
+    console.log(`Order details:`, { userId, itemCount: items?.length, totalAmount });
+    
+    // Validate required fields
+    if (!userId || !items || !Array.isArray(items) || items.length === 0) {
+      console.log(`❌ [DIRECT ORDER] Validation failed - missing required fields`);
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Missing required fields: userId, items array' 
+      });
+    }
+
+    // Create order using the existing order service
+    console.log(`🔄 [DIRECT ORDER] Calling orderService.createDirectOrder...`);
+    const order = await orderService.createDirectOrder(userId, items, totalAmount);
+    
+    console.log(`✅ [DIRECT ORDER] Successfully created order ${order.id} for user ${userId}`);
+    console.log(`✅ [DIRECT ORDER] Order will now appear in data_package_dashboard`);
+    
+    res.status(201).json({
+      success: true,
+      message: "Direct order created successfully",
+      orderId: order.id,
+      order
+    });
+  } catch (error) {
+    console.error(`❌ [DIRECT ORDER] Error creating direct order:`, error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+}
+
+// Get specific order by ID for status sync
+exports.getOrderById = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    
+    if (!orderId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order ID is required'
+      });
+    }
+
+    console.log(`🔍 [GET ORDER] Looking up order ${orderId}...`);
+    
+    // Get all orders and filter by orderId (using existing getOrderStatus function)
+    const allOrdersResult = await getOrderStatus();
+    const allOrders = allOrdersResult.data || [];
+    
+    // Find orders that match the requested order ID
+    const matchingOrders = allOrders.filter(item => item.orderId == orderId);
+    
+    if (matchingOrders.length === 0) {
+      console.log(`❌ [GET ORDER] Order ${orderId} not found`);
+      return res.status(404).json({
+        success: false,
+        message: `Order ${orderId} not found`
+      });
+    }
+
+    console.log(`✅ [GET ORDER] Found ${matchingOrders.length} items for order ${orderId}`);
+    
+    res.json({
+      success: true,
+      data: matchingOrders,
+      orderId: parseInt(orderId),
+      itemCount: matchingOrders.length
+    });
+  } catch (error) {
+    console.error(`❌ [GET ORDER] Error fetching order ${req.params.orderId}:`, error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+}
