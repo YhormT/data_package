@@ -12,7 +12,7 @@ const addItemToCart = async (userId, productId, quantity, mobileNumber = null) =
       data: { userId },
     });
   }
-  
+   
   // Calculate total price for this cart item
   const totalPrice = product.price * quantity;
   
