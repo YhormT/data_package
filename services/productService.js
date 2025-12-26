@@ -36,6 +36,27 @@ const setAllProductStockToZero = async (stockValue) => {
   });
 };
 
+// Get products visible in shop
+const getShopProducts = async () => {
+  return await prisma.product.findMany({
+    where: {
+      showInShop: true,
+      stock: { gt: 0 }
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+};
+
+// Toggle product shop visibility
+const toggleShopVisibility = async (id, showInShop) => {
+  return await prisma.product.update({
+    where: { id },
+    data: { showInShop },
+  });
+};
+
 const deleteProduct = async (id) => {
   return await prisma.$transaction(async (tx) => {
     // Delete related cart items
@@ -86,5 +107,7 @@ module.exports = {
   deleteProduct,
   setProductStockToZero,
   setAllProductStockToZero,
-  getPriceForUserRole
+  getPriceForUserRole,
+  getShopProducts,
+  toggleShopVisibility
 };

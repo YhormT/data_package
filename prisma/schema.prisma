@@ -25,11 +25,11 @@ model User {
   role             String
   createdAt        DateTime      @default(now())
   phone            String?
-  loanBalance      Float         @default(0) // actual amount of the user
-  refundedTotal    Float         @default(0)
+  loanBalance      Float         @default(0)
   hasLoan          Boolean       @default(false)
   adminLoanBalance Float?        @db.Float
-  isLoggedIn       Boolean       @default(false)  // 👈 NEW FIELD ADDED
+  isLoggedIn       Boolean       @default(false)
+  refundedTotal    Float         @default(0)
   cart             Cart?
   orders           Order[]
   TopUp            TopUp[]
@@ -45,8 +45,8 @@ model CartItem {
   price        Float
   productId    Int
   mobileNumber String?
-  cart         Cart    @relation(fields: [cartId], references: [id])
-  product      Product @relation(fields: [productId], references: [id])
+  cart         Cart    @relation(fields: [cartId], references: [id], onDelete: NoAction)
+  product      Product @relation(fields: [productId], references: [id], onDelete: NoAction)
 
   @@index([cartId], map: "CartItem_cartId_fkey")
   @@index([productId], map: "CartItem_productId_fkey")
@@ -76,10 +76,6 @@ model Order {
   items        OrderItem[]
 
   @@index([userId], map: "Order_userId_fkey")
-  @@index([createdAt])
-  @@index([status])
-  @@index([mobileNumber])
-  @@index([userId, createdAt])
   @@map("Order")
 }
 
@@ -90,14 +86,11 @@ model OrderItem {
   quantity     Int
   mobileNumber String?
   status       String  @default("Pending")
-  order        Order   @relation(fields: [orderId], references: [id])
-  product      Product @relation(fields: [productId], references: [id])
+  order        Order   @relation(fields: [orderId], references: [id], onDelete: NoAction)
+  product      Product @relation(fields: [productId], references: [id], onDelete: NoAction)
 
   @@index([orderId], map: "OrderItem_orderId_fkey")
   @@index([productId], map: "OrderItem_productId_fkey")
-  @@index([status])
-  @@index([mobileNumber])
-  @@index([orderId, status])
   @@map("OrderItem")
 }
 
@@ -132,29 +125,25 @@ model Purchase {
   price           String @db.VarChar(100)
   itemDescription String @db.Text
   uploadedFileId  Int
-  uploadedFile    Upload @relation(fields: [uploadedFileId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  uploadedFile    Upload @relation(fields: [uploadedFileId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([uploadedFileId], map: "uploaded_file_id")
   @@map("Purchase")
 }
 
 model Transaction {
-  id             Int       @id @default(autoincrement())
-  userId         Int
-  amount         Float
-  balance        Float
-  previousBalance Float    @default(0) 
-  type           String    @db.VarChar(191)
-  description    String    @db.Text
-  reference      String?   @db.VarChar(255)
-  createdAt      DateTime? @default(now()) @db.DateTime(3)
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_user_transaction")
+  id              Int       @id @default(autoincrement())
+  userId          Int
+  amount          Float
+  balance         Float
+  type            String
+  description     String    @db.Text
+  reference       String?   @db.VarChar(255)
+  createdAt       DateTime? @default(now())
+  previousBalance Float     @default(0)
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_transaction")
 
   @@index([userId], map: "fk_user_transaction")
-  @@index([userId, createdAt])
-  @@index([type])
-  @@index([createdAt])
-  @@index([reference])
   @@map("Transaction")
 }
 
@@ -163,14 +152,13 @@ model Announcement {
   title     String
   message   String
   isActive  Boolean  @default(true)
-  priority  Int      @default(1) // Higher numbers = higher priority
+  priority  Int      @default(1)
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  createdBy String   // Admin user ID who created it
-  
+  updatedAt DateTime @default(now()) @updatedAt
+  createdBy String
+
   @@map("Announcements")
 }
-
 
 model SmsMessage {
   id          Int      @id @default(autoincrement())
@@ -180,6 +168,6 @@ model SmsMessage {
   amount      Float?
   isProcessed Boolean  @default(false)
   createdAt   DateTime @default(now())
-  
+
   @@map("SmsMessage")
 }

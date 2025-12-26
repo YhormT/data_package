@@ -10,11 +10,17 @@ router.post('/add', productController.addProduct);
 // Get all products
 router.get('/', productController.getAllProducts);
 
+// Get products visible in shop (public endpoint)
+router.get('/shop', productController.getShopProducts);
+
 // Get a single product
 router.get('/:id', productController.getProductById);
 
 // Admin: Update product
 router.put('/update/:id', productController.updateProduct);
+
+// Toggle product shop visibility
+router.put('/toggle-shop/:id', productController.toggleShopVisibility);
 
 // Set product stock to zero
 router.put('/zero-stock/:id', productController.setProductStockToZero);

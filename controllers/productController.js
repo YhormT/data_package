@@ -90,6 +90,30 @@ const resetAllProductStock = async (req, res) => {
   }
 };
 
+// Get products visible in shop (public endpoint)
+const getShopProducts = async (req, res) => {
+  try {
+    const products = await productService.getShopProducts();
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Toggle product shop visibility
+const toggleShopVisibility = async (req, res) => {
+  try {
+    const { showInShop } = req.body;
+    const product = await productService.toggleShopVisibility(
+      parseInt(req.params.id),
+      showInShop
+    );
+    res.json(product);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 
 
 module.exports = {
@@ -99,5 +123,7 @@ module.exports = {
   updateProduct,
   deleteProduct,
   setProductStockToZero,
-  resetAllProductStock
+  resetAllProductStock,
+  getShopProducts,
+  toggleShopVisibility
 };

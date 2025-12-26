@@ -17,6 +17,8 @@ const smsRoutes = require('./routes/smsRoutes');
 const announcementRoutes = require('./routes/announcementRoutes');
 const pasteRoutes = require('./routes/pasteRoutes');
 const resetRoutes = require('./routes/resetRoutes');
+const shopRoutes = require('./routes/shopRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -83,6 +85,8 @@ app.use('/api/sms', smsRoutes);
 app.use('/api/announcement', announcementRoutes);
 app.use('/api', pasteRoutes);
 app.use('/api/reset', resetRoutes);
+app.use('/api/shop', shopRoutes);
+app.use('/api/payment', paymentRoutes);
 
 
 const PORT = process.env.PORT || 5000;
