@@ -14,4 +14,7 @@ router.post('/order', shopController.createShopOrder);
 // Track orders by mobile number
 router.get('/track', shopController.trackOrders);
 
+// Get all shop orders (for admin)
+router.get('/orders', shopController.getAllShopOrders);
+
 module.exports = router;

@@ -130,7 +130,8 @@ const verifyPaymentStatus = async (req, res) => {
             message: 'Payment verified and order placed!',
             status: 'SUCCESS',
             order: {
-              id: order.id
+              id: order.id,
+              mobileNumber: transaction.mobileNumber
             }
           });
         } catch (orderError) {
@@ -147,7 +148,10 @@ const verifyPaymentStatus = async (req, res) => {
           success: true,
           message: 'Payment already verified',
           status: 'SUCCESS',
-          order: { id: transaction.orderId }
+          order: { 
+            id: transaction.orderId,
+            mobileNumber: transaction.mobileNumber
+          }
         });
       }
     } else if (result.pending) {

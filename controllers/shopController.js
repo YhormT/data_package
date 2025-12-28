@@ -98,8 +98,65 @@ const trackOrders = async (req, res) => {
   }
 };
 
+// Get all shop orders (for admin)
+const getAllShopOrders = async (req, res) => {
+  try {
+    const prisma = require("../config/db");
+    
+    const orders = await prisma.order.findMany({
+      where: {
+        user: {
+          email: "shop@kelishub.com"
+        }
+      },
+      include: {
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                description: true,
+                price: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: {
+        createdAt: "desc"
+      }
+    });
+
+    // Transform orders for frontend
+    const transformedOrders = orders.map(order => ({
+      id: order.id,
+      customerName: order.items[0]?.customerName || 'Shop Customer',
+      phone: order.mobileNumber || order.items[0]?.mobileNumber || 'N/A',
+      product: order.items[0]?.product?.name || 'N/A',
+      description: order.items[0]?.product?.description || 'N/A',
+      amount: order.items[0]?.product?.price || 0,
+      status: order.items[0]?.status || order.status,
+      reference: order.items[0]?.externalRef || 'N/A',
+      date: order.createdAt
+    }));
+
+    res.json({
+      success: true,
+      orders: transformedOrders
+    });
+  } catch (error) {
+    console.error("Error fetching shop orders:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+};
+
 module.exports = {
   getShopProducts,
   createShopOrder,
-  trackOrders
+  trackOrders,
+  getAllShopOrders
 };
