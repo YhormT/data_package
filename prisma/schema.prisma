@@ -59,6 +59,7 @@ model Product {
   description String?
   price       Float
   stock       Int         @default(0)
+  showInShop  Boolean     @default(false)
   createdAt   DateTime    @default(now())
   CartItem    CartItem[]
   OrderItem   OrderItem[]
@@ -170,4 +171,27 @@ model SmsMessage {
   createdAt   DateTime @default(now())
 
   @@map("SmsMessage")
+}
+
+model PaymentTransaction {
+  id               Int      @id @default(autoincrement())
+  externalRef      String   @unique @db.VarChar(255)
+  mobileNumber     String   @db.VarChar(20)
+  amount           Float
+  currency         String   @default("GHS") @db.VarChar(10)
+  channel          String   @db.VarChar(50)
+  status           String   @db.VarChar(50)
+  productId        Int?
+  productName      String?  @db.VarChar(255)
+  orderId          Int?
+  moolreCode       String?  @db.VarChar(255)
+  moolreMessage    String?  @db.Text
+  moolreSessionId  String?  @db.VarChar(255)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @default(now()) @updatedAt
+
+  @@index([externalRef], map: "PaymentTransaction_externalRef_idx")
+  @@index([mobileNumber], map: "PaymentTransaction_mobileNumber_idx")
+  @@index([status], map: "PaymentTransaction_status_idx")
+  @@map("PaymentTransaction")
 }

@@ -74,9 +74,14 @@ const resetDatabase = async (req, res) => {
       const deletedSmsMessages = await tx.SmsMessage.deleteMany({});
       console.log(`Deleted ${deletedSmsMessages.count} SMS messages`);
       
+      // 10. Delete payment transactions
+      console.log('Deleting payment transactions...');
+      const deletedPaymentTransactions = await tx.paymentTransaction.deleteMany({});
+      console.log(`Deleted ${deletedPaymentTransactions.count} payment transactions`);
+      
       console.log('Database reset transaction completed successfully');
       
-      // 10. Keep user table completely untouched - no updates to user data
+      // 11. Keep user table completely untouched - no updates to user data
     }, {
       timeout: 30000, // Increase timeout to 30 seconds
       maxWait: 35000, // Maximum time to wait for a transaction slot

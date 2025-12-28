@@ -78,21 +78,32 @@ const createShopOrder = async (productId, mobileNumber, customerName) => {
 
 // Track orders by mobile number
 const trackOrdersByMobile = async (mobileNumber) => {
-  // Find orders with matching mobile number
+  // Normalize mobile number - remove leading 0 if present for comparison
+  const normalizedNumber = mobileNumber.startsWith('0') ? mobileNumber.substring(1) : mobileNumber;
+  
+  // Calculate 7 days ago
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  
+  // Search Order table only (same as Total Request modal on admin dashboard)
   const orders = await prisma.order.findMany({
     where: {
       OR: [
         { mobileNumber: { contains: mobileNumber } },
+        { mobileNumber: { contains: normalizedNumber } },
         {
           items: {
             some: {
-              mobileNumber: { contains: mobileNumber }
+              OR: [
+                { mobileNumber: { contains: mobileNumber } },
+                { mobileNumber: { contains: normalizedNumber } }
+              ]
             }
           }
         }
       ],
-      user: {
-        email: "shop@kelishub.com"
+      createdAt: {
+        gte: sevenDaysAgo
       }
     },
     include: {
@@ -112,7 +123,7 @@ const trackOrdersByMobile = async (mobileNumber) => {
     orderBy: {
       createdAt: "desc"
     },
-    take: 20 // Limit to last 20 orders
+    take: 20
   });
   
   return orders;
