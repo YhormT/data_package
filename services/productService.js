@@ -36,12 +36,11 @@ const setAllProductStockToZero = async (stockValue) => {
   });
 };
 
-// Get products visible in shop
+// Get products visible in shop (includes out-of-stock products)
 const getShopProducts = async () => {
   return await prisma.product.findMany({
     where: {
-      showInShop: true,
-      stock: { gt: 0 }
+      showInShop: true
     },
     orderBy: {
       createdAt: "desc",
