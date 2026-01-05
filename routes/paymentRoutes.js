@@ -20,4 +20,10 @@ router.get('/status/:externalRef', paymentController.checkStatus);
 // Get all transactions (admin - should add auth middleware in production)
 router.get('/transactions', paymentController.getAllTransactions);
 
+// Get orphaned payments (successful payments without orders)
+router.get('/orphaned', paymentController.getOrphanedPayments);
+
+// Reconcile orphaned payments - creates orders for successful payments
+router.post('/reconcile', paymentController.reconcilePayments);
+
 module.exports = router;

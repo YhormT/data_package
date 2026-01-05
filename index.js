@@ -19,6 +19,7 @@ const pasteRoutes = require('./routes/pasteRoutes');
 const resetRoutes = require('./routes/resetRoutes');
 const shopRoutes = require('./routes/shopRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
+const complaintRoutes = require('./routes/complaintRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -87,7 +88,40 @@ app.use('/api', pasteRoutes);
 app.use('/api/reset', resetRoutes);
 app.use('/api/shop', shopRoutes);
 app.use('/api/payment', paymentRoutes);
-
+app.use('/api/complaints', complaintRoutes);
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+// Background job: Reconcile orphaned payments every 5 minutes
+const paymentService = require('./services/paymentService');
+const shopService = require('./services/shopService');
+
+const reconcileOrphanedPayments = async () => {
+  try {
+    const orphanedPayments = await paymentService.getOrphanedSuccessfulPayments();
+    
+    if (orphanedPayments.length > 0) {
+      console.log(`[Auto-Reconciliation] Found ${orphanedPayments.length} orphaned payments`);
+      
+      for (const payment of orphanedPayments) {
+        try {
+          const result = await paymentService.verifyAndCreateOrder(payment.externalRef, shopService);
+          if (result.success && result.orderId) {
+            console.log(`[Auto-Reconciliation] Created order ${result.orderId} for payment ${payment.externalRef}`);
+          }
+        } catch (err) {
+          console.error(`[Auto-Reconciliation] Failed for ${payment.externalRef}:`, err.message);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[Auto-Reconciliation] Error:', error.message);
+  }
+};
+
+// Run reconciliation every 5 minutes
+setInterval(reconcileOrphanedPayments, 5 * 60 * 1000);
+
+// Also run once after server starts (after 30 seconds)
+setTimeout(reconcileOrphanedPayments, 30 * 1000);

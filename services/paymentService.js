@@ -329,11 +329,118 @@ const linkTransactionToOrder = async (externalRef, orderId) => {
   });
 };
 
+// Get all successful payments that don't have orders (for reconciliation)
+const getOrphanedSuccessfulPayments = async () => {
+  return await prisma.paymentTransaction.findMany({
+    where: {
+      status: 'SUCCESS',
+      orderId: null,
+      productId: { not: null }
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 50
+  });
+};
+
+// Mark transaction as having order creation attempted
+const markOrderCreationAttempted = async (transactionId, success, errorMessage = null) => {
+  return await prisma.paymentTransaction.update({
+    where: { id: transactionId },
+    data: {
+      moolreMessage: success 
+        ? 'Order created successfully' 
+        : `Order creation failed: ${errorMessage || 'Unknown error'}`
+    }
+  });
+};
+
+// Verify payment directly with Paystack and create order if successful
+const verifyAndCreateOrder = async (reference, shopService) => {
+  console.log('[Payment Reconciliation] Processing reference:', reference);
+  
+  // First check if transaction exists and already has an order
+  const existingTransaction = await prisma.paymentTransaction.findUnique({
+    where: { externalRef: reference }
+  });
+
+  if (!existingTransaction) {
+    return { success: false, error: 'Transaction not found' };
+  }
+
+  if (existingTransaction.orderId) {
+    return { success: true, message: 'Order already exists', orderId: existingTransaction.orderId };
+  }
+
+  // Verify with Paystack
+  try {
+    const response = await axios({
+      method: 'GET',
+      url: `${PAYSTACK_VERIFY_URL}/${reference}`,
+      headers: {
+        'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 30000
+    });
+
+    const paymentData = response.data.data;
+    const isSuccess = paymentData?.status === 'success';
+
+    if (!isSuccess) {
+      // Update transaction status
+      await prisma.paymentTransaction.update({
+        where: { id: existingTransaction.id },
+        data: { status: paymentData?.status === 'failed' ? 'FAILED' : existingTransaction.status }
+      });
+      return { success: false, error: 'Payment not successful', status: paymentData?.status };
+    }
+
+    // Payment is successful - update status and create order
+    await prisma.paymentTransaction.update({
+      where: { id: existingTransaction.id },
+      data: { status: 'SUCCESS' }
+    });
+
+    // Create order
+    if (existingTransaction.productId && existingTransaction.mobileNumber) {
+      try {
+        const order = await shopService.createShopOrder(
+          existingTransaction.productId,
+          existingTransaction.mobileNumber,
+          'Shop Customer'
+        );
+
+        await linkTransactionToOrder(reference, order.id);
+        console.log('[Payment Reconciliation] Order created:', order.id);
+
+        return { 
+          success: true, 
+          message: 'Payment verified and order created',
+          orderId: order.id,
+          mobileNumber: existingTransaction.mobileNumber
+        };
+      } catch (orderError) {
+        console.error('[Payment Reconciliation] Order creation failed:', orderError);
+        await markOrderCreationAttempted(existingTransaction.id, false, orderError.message);
+        return { success: false, error: 'Order creation failed', details: orderError.message };
+      }
+    } else {
+      return { success: false, error: 'Missing product or mobile number' };
+    }
+
+  } catch (error) {
+    console.error('[Payment Reconciliation] Verification error:', error.message);
+    return { success: false, error: error.message };
+  }
+};
+
 module.exports = {
   initializePayment,
   verifyPayment,
   handleWebhook,
   checkPaymentStatus,
   getAllPaymentTransactions,
-  linkTransactionToOrder
+  linkTransactionToOrder,
+  getOrphanedSuccessfulPayments,
+  verifyAndCreateOrder
 };

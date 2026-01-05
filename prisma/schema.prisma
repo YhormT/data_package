@@ -149,16 +149,44 @@ model Transaction {
 }
 
 model Announcement {
-  id        String   @id @default(cuid())
-  title     String
-  message   String
-  isActive  Boolean  @default(true)
-  priority  Int      @default(1)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
-  createdBy String
+  id             String             @id @default(cuid())
+  title          String
+  message        String
+  isActive       Boolean            @default(true)
+  priority       Int                @default(1)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @default(now()) @updatedAt
+  createdBy      String
+  target         String             @default("login") // login, shop, all
+  targetAudience String             @default("all") // all, shop, premium, normal, super, other, user
+  readBy         NotificationRead[]
 
   @@map("Announcements")
+}
+
+model NotificationRead {
+  id             Int          @id @default(autoincrement())
+  announcementId String
+  userId         Int
+  readAt         DateTime     @default(now())
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+
+  @@unique([announcementId, userId])
+  @@index([userId])
+  @@map("NotificationRead")
+}
+
+model Complaint {
+  id           Int      @id @default(autoincrement())
+  orderId      String?
+  mobileNumber String   @db.VarChar(20)
+  message      String   @db.Text
+  status       String   @default("pending") // pending, reviewed, resolved
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+  adminNotes   String?  @db.Text
+
+  @@map("Complaint")
 }
 
 model SmsMessage {

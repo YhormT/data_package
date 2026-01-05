@@ -5,12 +5,90 @@ class AnnouncementController {
   // Get active announcements for public use
   async getActiveAnnouncements(req, res) {
     try {
-      const announcements = await announcementService.getActiveAnnouncements();
+      const { target } = req.query;
+      const announcements = await announcementService.getActiveAnnouncements(target);
       
       res.status(200).json({
         success: true,
         data: announcements,
         message: 'Active announcements fetched successfully'
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  // Get announcements for a specific audience (agents)
+  async getAnnouncementsForAudience(req, res) {
+    try {
+      const { audience } = req.params;
+      const userId = req.query.userId || req.user?.id;
+      
+      const announcements = await announcementService.getAnnouncementsForAudience(audience, userId);
+      
+      res.status(200).json({
+        success: true,
+        data: announcements,
+        message: 'Announcements fetched successfully'
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  // Mark announcement as read
+  async markAsRead(req, res) {
+    try {
+      const { announcementId } = req.params;
+      const userId = req.body.userId || req.user?.id;
+      
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'User ID is required'
+        });
+      }
+      
+      const result = await announcementService.markAsRead(announcementId, userId);
+      
+      res.status(200).json({
+        success: true,
+        data: result,
+        message: 'Announcement marked as read'
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  // Get unread count for a user
+  async getUnreadCount(req, res) {
+    try {
+      const { audience } = req.params;
+      const userId = req.query.userId || req.user?.id;
+      
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'User ID is required'
+        });
+      }
+      
+      const count = await announcementService.getUnreadCount(audience, userId);
+      
+      res.status(200).json({
+        success: true,
+        data: { unreadCount: count },
+        message: 'Unread count fetched successfully'
       });
     } catch (error) {
       res.status(500).json({
@@ -41,8 +119,8 @@ class AnnouncementController {
   // Create new announcement (Admin only)
   async createAnnouncement(req, res) {
     try {
-      const { title, message, isActive, priority } = req.body;
-      const createdBy = req.user.id; // Assuming you have user info in req.user from auth middleware
+      const { title, message, isActive, priority, target, targetAudience } = req.body;
+      const createdBy = req.user.id;
       
       if (!title || !message) {
         return res.status(400).json({
@@ -56,7 +134,9 @@ class AnnouncementController {
         message,
         isActive,
         priority,
-        createdBy
+        createdBy,
+        target: target || 'login',
+        targetAudience: targetAudience || 'all'
       };
       
       const announcement = await announcementService.createAnnouncement(announcementData);

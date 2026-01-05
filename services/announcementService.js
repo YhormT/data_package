@@ -2,12 +2,22 @@ const prisma = require("../config/db");
 
 class AnnouncementService {
   // Get all active announcements (for public display)
-  async getActiveAnnouncements() {
+  async getActiveAnnouncements(target = null) {
     try {
+      const whereClause = {
+        isActive: true
+      };
+      
+      // Filter by target if specified
+      if (target) {
+        whereClause.OR = [
+          { target: target },
+          { target: 'all' }
+        ];
+      }
+      
       const announcements = await prisma.announcement.findMany({
-        where: {
-          isActive: true
-        },
+        where: whereClause,
         orderBy: [
           { priority: 'desc' },
           { createdAt: 'desc' }
@@ -16,6 +26,94 @@ class AnnouncementService {
       return announcements;
     } catch (error) {
       throw new Error(`Failed to fetch active announcements: ${error.message}`);
+    }
+  }
+
+  // Get announcements for a specific audience (agents)
+  async getAnnouncementsForAudience(audience, userId = null) {
+    try {
+      const announcements = await prisma.announcement.findMany({
+        where: {
+          isActive: true,
+          OR: [
+            { targetAudience: audience.toLowerCase() },
+            { targetAudience: 'all' }
+          ]
+        },
+        include: {
+          readBy: userId ? {
+            where: { userId: parseInt(userId) }
+          } : false
+        },
+        orderBy: [
+          { priority: 'desc' },
+          { createdAt: 'desc' }
+        ]
+      });
+      
+      // Add isRead flag for each announcement
+      return announcements.map(a => ({
+        ...a,
+        isRead: userId ? a.readBy?.length > 0 : false,
+        readBy: undefined // Remove readBy from response
+      }));
+    } catch (error) {
+      throw new Error(`Failed to fetch announcements for audience: ${error.message}`);
+    }
+  }
+
+  // Mark announcement as read
+  async markAsRead(announcementId, userId) {
+    try {
+      await prisma.notificationRead.upsert({
+        where: {
+          announcementId_userId: {
+            announcementId,
+            userId: parseInt(userId)
+          }
+        },
+        update: {
+          readAt: new Date()
+        },
+        create: {
+          announcementId,
+          userId: parseInt(userId)
+        }
+      });
+      return { success: true };
+    } catch (error) {
+      throw new Error(`Failed to mark announcement as read: ${error.message}`);
+    }
+  }
+
+  // Get unread count for a user
+  async getUnreadCount(audience, userId) {
+    try {
+      const announcements = await prisma.announcement.findMany({
+        where: {
+          isActive: true,
+          OR: [
+            { targetAudience: audience.toLowerCase() },
+            { targetAudience: 'all' }
+          ]
+        },
+        select: { id: true }
+      });
+      
+      const readAnnouncements = await prisma.notificationRead.findMany({
+        where: {
+          userId: parseInt(userId),
+          announcementId: { in: announcements.map(a => a.id) }
+        },
+        select: { announcementId: true }
+      });
+      
+      const readIds = new Set(readAnnouncements.map(r => r.announcementId));
+      const unreadCount = announcements.filter(a => !readIds.has(a.id)).length;
+      
+      return unreadCount;
+    } catch (error) {
+      throw new Error(`Failed to get unread count: ${error.message}`);
     }
   }
 
@@ -37,11 +135,15 @@ class AnnouncementService {
   // Create new announcement
   async createAnnouncement(data) {
     try {
-      const { title, message, priority = 1, createdBy } = data;
+      const { title, message, priority = 1, createdBy, target = 'login', targetAudience = 'all' } = data;
 
-      // Deactivate all previous announcements
+      // Deactivate all previous announcements with the same target and audience
       await prisma.announcement.updateMany({
-        where: { isActive: true },
+        where: { 
+          isActive: true,
+          target: target,
+          targetAudience: targetAudience
+        },
         data: { isActive: false }
       });
 
@@ -50,9 +152,11 @@ class AnnouncementService {
         data: {
           title,
           message,
-          isActive: true, // Always set new as active
+          isActive: true,
           priority,
-          createdBy
+          createdBy,
+          target,
+          targetAudience
         }
       });
 

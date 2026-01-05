@@ -9,6 +9,9 @@ const adminMiddleware = require('../middleware/adminMiddleware'); // Your admin 
 
 // Public routes
 router.get('/active', announcementController.getActiveAnnouncements);
+router.get('/audience/:audience', announcementController.getAnnouncementsForAudience);
+router.get('/unread/:audience', announcementController.getUnreadCount);
+router.post('/read/:announcementId', announcementController.markAsRead);
 
 // Protected routes (Admin only)
 router.use(authMiddleware); // Apply auth middleware to all routes below

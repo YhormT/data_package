@@ -109,22 +109,69 @@ const verifyPaymentStatus = async (req, res) => {
       });
     }
 
-    const result = await paymentService.verifyPayment(reference);
+    console.log('[Payment Verify] Starting verification for:', reference);
+
+    // Retry logic - try up to 3 times with delays
+    let lastError = null;
+    let result = null;
+    
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        result = await paymentService.verifyPayment(reference);
+        if (result.success || result.pending === false) {
+          break; // Got a definitive result
+        }
+        // If pending, wait and retry
+        if (result.pending && attempt < 3) {
+          console.log(`[Payment Verify] Attempt ${attempt} - Payment pending, retrying in 2s...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      } catch (err) {
+        lastError = err;
+        console.error(`[Payment Verify] Attempt ${attempt} failed:`, err.message);
+        if (attempt < 3) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+    }
+
+    if (!result && lastError) {
+      throw lastError;
+    }
 
     if (result.success) {
       // Payment confirmed - create order if not already created
       const transaction = await paymentService.checkPaymentStatus(reference);
       
       if (!transaction.orderId) {
-        try {
-          const order = await shopService.createShopOrder(
-            transaction.productId,
-            transaction.mobileNumber,
-            'Shop Customer'
-          );
+        // Try to create order with retry
+        let orderCreated = false;
+        let order = null;
+        let orderError = null;
 
-          await paymentService.linkTransactionToOrder(reference, order.id);
+        for (let orderAttempt = 1; orderAttempt <= 3; orderAttempt++) {
+          try {
+            console.log(`[Payment Verify] Creating order - attempt ${orderAttempt}`);
+            order = await shopService.createShopOrder(
+              transaction.productId,
+              transaction.mobileNumber,
+              'Shop Customer'
+            );
 
+            await paymentService.linkTransactionToOrder(reference, order.id);
+            orderCreated = true;
+            console.log('[Payment Verify] Order created successfully:', order.id);
+            break;
+          } catch (err) {
+            orderError = err;
+            console.error(`[Payment Verify] Order creation attempt ${orderAttempt} failed:`, err.message);
+            if (orderAttempt < 3) {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+          }
+        }
+
+        if (orderCreated && order) {
           res.json({
             success: true,
             message: 'Payment verified and order placed!',
@@ -134,13 +181,15 @@ const verifyPaymentStatus = async (req, res) => {
               mobileNumber: transaction.mobileNumber
             }
           });
-        } catch (orderError) {
-          console.error('Order creation error:', orderError);
+        } else {
+          console.error('[Payment Verify] All order creation attempts failed:', orderError?.message);
+          // Still return success for payment but flag the order issue
           res.json({
             success: true,
-            message: 'Payment verified but order creation failed',
+            message: 'Payment verified! Order will be processed shortly.',
             status: 'SUCCESS',
-            orderError: orderError.message
+            orderPending: true,
+            reference: reference
           });
         }
       } else {
@@ -157,7 +206,7 @@ const verifyPaymentStatus = async (req, res) => {
     } else if (result.pending) {
       res.json({
         success: false,
-        message: 'Payment is still pending',
+        message: 'Payment is still pending. Please complete the payment.',
         status: 'PENDING'
       });
     } else {
@@ -168,7 +217,7 @@ const verifyPaymentStatus = async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Payment verification error:', error);
+    console.error('[Payment Verify] Error:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Internal server error'
@@ -222,10 +271,97 @@ const getAllTransactions = async (req, res) => {
   }
 };
 
+// Reconcile orphaned payments - process successful payments without orders
+const reconcilePayments = async (req, res) => {
+  try {
+    console.log('[Payment Reconciliation] Starting reconciliation...');
+    
+    const orphanedPayments = await paymentService.getOrphanedSuccessfulPayments();
+    console.log(`[Payment Reconciliation] Found ${orphanedPayments.length} orphaned payments`);
+
+    const results = {
+      processed: 0,
+      ordersCreated: 0,
+      failed: 0,
+      details: []
+    };
+
+    for (const payment of orphanedPayments) {
+      try {
+        const result = await paymentService.verifyAndCreateOrder(payment.externalRef, shopService);
+        results.processed++;
+        
+        if (result.success && result.orderId) {
+          results.ordersCreated++;
+          results.details.push({
+            reference: payment.externalRef,
+            status: 'success',
+            orderId: result.orderId
+          });
+        } else if (result.success && result.message === 'Order already exists') {
+          results.details.push({
+            reference: payment.externalRef,
+            status: 'already_exists',
+            orderId: result.orderId
+          });
+        } else {
+          results.failed++;
+          results.details.push({
+            reference: payment.externalRef,
+            status: 'failed',
+            error: result.error
+          });
+        }
+      } catch (error) {
+        results.failed++;
+        results.details.push({
+          reference: payment.externalRef,
+          status: 'error',
+          error: error.message
+        });
+      }
+    }
+
+    console.log('[Payment Reconciliation] Complete:', results);
+
+    res.json({
+      success: true,
+      message: `Reconciliation complete. Created ${results.ordersCreated} orders.`,
+      ...results
+    });
+  } catch (error) {
+    console.error('[Payment Reconciliation] Error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Reconciliation failed'
+    });
+  }
+};
+
+// Get orphaned payments (successful payments without orders)
+const getOrphanedPayments = async (req, res) => {
+  try {
+    const orphanedPayments = await paymentService.getOrphanedSuccessfulPayments();
+    res.json({
+      success: true,
+      count: orphanedPayments.length,
+      payments: orphanedPayments
+    });
+  } catch (error) {
+    console.error('Get orphaned payments error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Internal server error'
+    });
+  }
+};
+
 module.exports = {
   initializePayment,
   handleWebhook,
   verifyPaymentStatus,
   checkStatus,
-  getAllTransactions
+  getAllTransactions,
+  reconcilePayments,
+  getOrphanedPayments
 };
