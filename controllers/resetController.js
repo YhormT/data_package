@@ -79,9 +79,24 @@ const resetDatabase = async (req, res) => {
       const deletedPaymentTransactions = await tx.paymentTransaction.deleteMany({});
       console.log(`Deleted ${deletedPaymentTransactions.count} payment transactions`);
       
+      // 11. Delete notification reads (references announcements)
+      console.log('Deleting notification reads...');
+      const deletedNotificationReads = await tx.notificationRead.deleteMany({});
+      console.log(`Deleted ${deletedNotificationReads.count} notification reads`);
+      
+      // 12. Delete complaints
+      console.log('Deleting complaints...');
+      const deletedComplaints = await tx.complaint.deleteMany({});
+      console.log(`Deleted ${deletedComplaints.count} complaints`);
+      
+      // 13. Delete purchases (references uploads)
+      console.log('Deleting purchases...');
+      const deletedPurchases = await tx.purchase.deleteMany({});
+      console.log(`Deleted ${deletedPurchases.count} purchases`);
+      
       console.log('Database reset transaction completed successfully');
       
-      // 11. Keep user table completely untouched - no updates to user data
+      // Keep user table and product table completely untouched
     }, {
       timeout: 30000, // Increase timeout to 30 seconds
       maxWait: 35000, // Maximum time to wait for a transaction slot

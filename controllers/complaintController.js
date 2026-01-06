@@ -5,7 +5,7 @@ class ComplaintController {
   // Create a new complaint (public - from shop)
   async createComplaint(req, res) {
     try {
-      const { orderId, mobileNumber, message } = req.body;
+      const { orderId, mobileNumber, whatsappNumber, message } = req.body;
       
       if (!mobileNumber || !message) {
         return res.status(400).json({
@@ -17,6 +17,7 @@ class ComplaintController {
       const complaint = await complaintService.createComplaint({
         orderId,
         mobileNumber,
+        whatsappNumber,
         message
       });
       

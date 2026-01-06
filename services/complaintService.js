@@ -4,12 +4,13 @@ class ComplaintService {
   // Create a new complaint
   async createComplaint(data) {
     try {
-      const { orderId, mobileNumber, message } = data;
+      const { orderId, mobileNumber, whatsappNumber, message } = data;
       
       const complaint = await prisma.complaint.create({
         data: {
           orderId: orderId || null,
           mobileNumber,
+          whatsappNumber: whatsappNumber || null,
           message,
           status: 'pending'
         }

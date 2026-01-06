@@ -78,30 +78,46 @@ const createShopOrder = async (productId, mobileNumber, customerName) => {
 
 // Track orders by mobile number
 const trackOrdersByMobile = async (mobileNumber) => {
-  // Normalize mobile number - remove leading 0 if present for comparison
-  const normalizedNumber = mobileNumber.startsWith('0') ? mobileNumber.substring(1) : mobileNumber;
+  // Clean and generate phone number variants for comprehensive search
+  const cleanedNumber = mobileNumber.replace(/\D/g, '');
+  const phoneVariants = [cleanedNumber];
+  
+  // Generate phone number variants for comprehensive search
+  if (cleanedNumber.startsWith('0') && cleanedNumber.length === 10) {
+    // 0XXXXXXXXX -> add XXXXXXXXX and 233XXXXXXXXX
+    phoneVariants.push(cleanedNumber.substring(1));
+    phoneVariants.push('233' + cleanedNumber.substring(1));
+  } else if (cleanedNumber.startsWith('233') && cleanedNumber.length === 12) {
+    // 233XXXXXXXXX -> add 0XXXXXXXXX and XXXXXXXXX
+    phoneVariants.push('0' + cleanedNumber.substring(3));
+    phoneVariants.push(cleanedNumber.substring(3));
+  } else if (cleanedNumber.length === 9) {
+    // XXXXXXXXX -> add 0XXXXXXXXX and 233XXXXXXXXX
+    phoneVariants.push('0' + cleanedNumber);
+    phoneVariants.push('233' + cleanedNumber);
+  }
+  
+  // Build OR conditions for all phone variants
+  const phoneConditions = [];
+  phoneVariants.forEach(variant => {
+    phoneConditions.push({ mobileNumber: { contains: variant } });
+    phoneConditions.push({
+      items: {
+        some: {
+          mobileNumber: { contains: variant }
+        }
+      }
+    });
+  });
   
   // Calculate 7 days ago
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   
-  // Search Order table only (same as Total Request modal on admin dashboard)
+  // Search Order table with all phone variants
   const orders = await prisma.order.findMany({
     where: {
-      OR: [
-        { mobileNumber: { contains: mobileNumber } },
-        { mobileNumber: { contains: normalizedNumber } },
-        {
-          items: {
-            some: {
-              OR: [
-                { mobileNumber: { contains: mobileNumber } },
-                { mobileNumber: { contains: normalizedNumber } }
-              ]
-            }
-          }
-        }
-      ],
+      OR: phoneConditions,
       createdAt: {
         gte: sevenDaysAgo
       }
