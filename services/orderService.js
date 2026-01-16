@@ -354,6 +354,16 @@ const getOrderStatus = async (options = {}) => {
     const isNew = orderCreatedAt > fiveMinutesAgo;
     
     for (const item of order.items) {
+      // If status filter is applied, only include items with that exact status
+      if (selectedStatusMain && item.status !== selectedStatusMain) {
+        continue; // Skip items that don't match the status filter
+      }
+      
+      // If product filter is applied, only include items with that product
+      if (selectedProduct && item.product.name !== selectedProduct) {
+        continue; // Skip items that don't match the product filter
+      }
+      
       transformedData.push({
         id: item.id,
         orderId: order.id,
@@ -757,6 +767,41 @@ const orderService = {
 
       return order;
     });
+  },
+
+  // Get multiple orders by IDs
+  async getOrdersByIds(orderIds) {
+    const orders = await prisma.order.findMany({
+      where: {
+        id: {
+          in: orderIds.map(id => parseInt(id))
+        }
+      },
+      include: {
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                description: true,
+                price: true
+              }
+            }
+          }
+        },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true
+          }
+        }
+      }
+    });
+
+    return orders;
   }
 };
 
@@ -770,6 +815,7 @@ module.exports = {
   getOrderHistory,
   updateOrderItemsStatus,
   createDirectOrder: orderService.createDirectOrder,
+  getOrdersByIds: orderService.getOrdersByIds,
 
   orderService
 };

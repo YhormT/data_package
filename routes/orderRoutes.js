@@ -43,4 +43,7 @@ router.put('/orders/:orderId/status', orderController.updateOrderItemsStatus);
 // Direct order creation from ext_agent system
 router.post('/create-direct', orderController.createDirectOrder);
 
+// Get multiple orders by IDs for GB calculation
+router.post('/admin/orders-by-ids', orderController.getOrdersByIds);
+
 module.exports = router;

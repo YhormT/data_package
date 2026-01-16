@@ -594,3 +594,30 @@ exports.getOrderById = async (req, res) => {
     });
   }
 }
+
+// Get multiple orders by IDs for GB calculation
+exports.getOrdersByIds = async (req, res) => {
+  try {
+    const { orderIds } = req.body;
+    
+    if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order IDs array is required'
+      });
+    }
+
+    const orders = await orderService.getOrdersByIds(orderIds);
+    
+    res.json({
+      success: true,
+      orders
+    });
+  } catch (error) {
+    console.error(`❌ [GET ORDERS BY IDS] Error:`, error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+}
